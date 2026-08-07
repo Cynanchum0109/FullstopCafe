@@ -19,7 +19,7 @@ export class HUD {
       <div class="hud__row"><span class="hud__label">选中</span><span data-focus>-</span></div>
       <div class="hud__hint">
         WASD 走动 · 拖拽 / Q E 转视角 · 滚轮缩放<br />
-        空格 暂停 · T 切倍速
+        空格 暂停 · T 切倍速 · <b>\` 调模型</b>
       </div>
     `;
     container.appendChild(this.root);

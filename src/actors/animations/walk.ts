@@ -52,16 +52,12 @@ export const walk: AnimFn = (rig, ctx) => {
   const stepL = swing;
   const stepR = -swing;
 
-  rig.joints.footL.position.set(
-    -0.115,
-    0.055 + Math.max(0, stepL) * 0.1 * speed,
-    -0.28 - stepL * stride,
-  );
-  rig.joints.footR.position.set(
-    0.115,
-    0.055 + Math.max(0, stepR) * 0.1 * speed,
-    -0.28 - stepR * stride,
-  );
+  // Offsets from the rest pose rather than absolute positions, so retuning the
+  // body proportions never leaves the feet floating in the wrong place.
+  rig.joints.footL.position.y += Math.max(0, stepL) * 0.1 * speed;
+  rig.joints.footL.position.z -= stepL * stride;
+  rig.joints.footR.position.y += Math.max(0, stepR) * 0.1 * speed;
+  rig.joints.footR.position.z -= stepR * stride;
 
   // Squash each foot as it takes the weight.
   const squashL = 1 - Math.max(0, -stepL) * 0.25 * speed;
@@ -76,7 +72,9 @@ export const walk: AnimFn = (rig, ctx) => {
     rig.joints.handL.visible = true;
     rig.joints.handR.visible = true;
     const reach = 0.1 * speed;
-    rig.joints.handL.position.set(-0.26, 0.36 + swing * 0.04, -0.04 - swing * reach);
-    rig.joints.handR.position.set(0.26, 0.36 - swing * 0.04, -0.04 + swing * reach);
+    rig.joints.handL.position.y += swing * 0.04;
+    rig.joints.handL.position.z -= swing * reach;
+    rig.joints.handR.position.y -= swing * 0.04;
+    rig.joints.handR.position.z += swing * reach;
   }
 };

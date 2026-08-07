@@ -62,6 +62,141 @@ body {
   opacity: 0.6;
 }
 
+/* --- Rig tuner ------------------------------------------------------- */
+
+/* `display: flex` below would otherwise beat the [hidden] attribute. */
+.panel--tuner[hidden] {
+  display: none;
+}
+
+.panel--tuner {
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.tuner__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tuner__hint {
+  opacity: 0.45;
+  font-size: 11px;
+}
+
+.tuner__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.tuner__tab {
+  flex: 1;
+  padding: 5px 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tuner__tab--on {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.tuner__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 12px 8px;
+}
+
+.tuner__group {
+  margin-bottom: 10px;
+}
+
+.tuner__group h4 {
+  margin: 10px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.5;
+  letter-spacing: 0.08em;
+}
+
+.tuner__row {
+  display: grid;
+  grid-template-columns: 68px 1fr 40px;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+}
+
+.tuner__label {
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.tuner__value {
+  font-size: 10px;
+  opacity: 0.5;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.tuner__row input[type="range"] {
+  width: 100%;
+  accent-color: #7fb0c0;
+}
+
+.tuner__row input[type="color"] {
+  width: 100%;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.tuner__footer {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tuner__button {
+  flex: 1;
+  padding: 6px 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tuner__button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.tuner__status {
+  min-height: 16px;
+  padding: 0 12px 8px;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
 .hud__hint {
   margin-top: 8px;
   padding-top: 8px;

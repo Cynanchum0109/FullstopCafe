@@ -23,6 +23,11 @@ export class IsoCamera {
   readonly camera: THREE.OrthographicCamera;
   readonly target = new THREE.Vector3(0, 0.5, 0);
 
+  /** Where the camera drifts back to when nothing is focused. */
+  private readonly homeTarget = new THREE.Vector3(0, 0.5, 0);
+  private readonly desiredTarget = new THREE.Vector3(0, 0.5, 0);
+  private homeZoom = 1;
+
   /** Which of the four corners we are heading to. */
   private quadrant = 0;
   private azimuth = Math.PI / 4;
@@ -58,6 +63,19 @@ export class IsoCamera {
     );
   }
 
+  /** Frame a point in the world. Used by the rig tuner to inspect a character. */
+  focusOn(x: number, y: number, z: number, zoom: number): void {
+    if (this.desiredTarget.equals(this.homeTarget)) this.homeZoom = this.targetZoom;
+    this.desiredTarget.set(x, y, z);
+    this.targetZoom = THREE.MathUtils.clamp(zoom, MIN_ZOOM, MAX_ZOOM);
+  }
+
+  /** Return to the room-wide view. */
+  clearFocus(): void {
+    this.desiredTarget.copy(this.homeTarget);
+    this.targetZoom = this.homeZoom;
+  }
+
   /**
    * Ease toward the target orientation. Uses unscaled delta on purpose: camera
    * feel should not change when the player fast-forwards the simulation.
@@ -66,6 +84,7 @@ export class IsoCamera {
     const t = 1 - Math.exp(-SMOOTHING * delta);
     this.azimuth += (this.targetAzimuth - this.azimuth) * t;
     this.zoom += (this.targetZoom - this.zoom) * t;
+    this.target.lerp(this.desiredTarget, t);
     this.applyFrustum();
     this.applyTransform();
   }

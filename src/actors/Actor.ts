@@ -27,7 +27,9 @@ export interface ActorOptions {
 export class Actor {
   readonly id: string;
   readonly displayName: string;
-  readonly rig: Rig;
+  /** Swapped out wholesale by `applySpec`; never hold a reference across frames. */
+  rig: Rig;
+  /** Stable container. The rig hangs off this so it can be rebuilt in place. */
   readonly object: THREE.Object3D;
 
   /** Current normalised speed, 0..1. Read by animations. */
@@ -52,16 +54,36 @@ export class Actor {
   constructor(options: ActorOptions) {
     this.id = options.id;
     this.displayName = options.displayName;
-    this.rig = new Rig(options.spec);
-    this.object = this.rig.root;
+    this.object = new THREE.Group();
     this.object.name = `actor:${options.id}`;
-    // Tag every mesh so a raycast hit can be traced back to this actor.
-    this.object.traverse((child) => {
-      child.userData["actorId"] = options.id;
-    });
+    this.rig = new Rig(options.spec);
+    this.object.add(this.rig.root);
+    this.tagForPicking();
     if (options.position) this.object.position.copy(options.position);
     this.phaseOffset = Math.random() * 100;
     this.desiredYaw = this.object.rotation.y;
+  }
+
+  /**
+   * Rebuild the body from a new spec, in place. Used by the rig tuner; the
+   * actor keeps its position, heading and animation state across the swap.
+   */
+  applySpec(spec: Partial<RigSpec>): void {
+    this.object.remove(this.rig.root);
+    this.rig.dispose();
+    this.rig = new Rig(spec);
+    this.object.add(this.rig.root);
+    this.tagForPicking();
+    // The captured pose points at joints that no longer exist.
+    this.fadePose = null;
+    this.fadeRemaining = 0;
+  }
+
+  /** Tag every mesh so a raycast hit can be traced back to this actor. */
+  private tagForPicking(): void {
+    this.object.traverse((child) => {
+      child.userData["actorId"] = this.id;
+    });
   }
 
   get position(): THREE.Vector3 {
@@ -81,6 +103,16 @@ export class Actor {
 
   get isMoving(): boolean {
     return this.hasTarget;
+  }
+
+  /** Snap to an absolute heading. Used by the rig tuner to inspect the face. */
+  setYaw(yaw: number): void {
+    this.desiredYaw = yaw;
+    this.object.rotation.y = yaw;
+  }
+
+  get yaw(): number {
+    return this.object.rotation.y;
   }
 
   /** Face a world position without moving toward it. */

@@ -1,69 +1,143 @@
 import * as THREE from "three";
 import { palette } from "../world/palette";
-import { cone, sphere, flatMaterial, flatMaterialDouble } from "../world/materials";
+import { box, cone, sphere, flatMaterial, flatMaterialDouble } from "../world/materials";
 
 /**
- * Everything about how a character looks. Profiles supply one of these and
- * nothing else, so adding a character never means touching rig code.
+ * Everything about how a character looks, as plain numbers.
+ *
+ * There is deliberately no `hairStyle` switch any more. Every head is built
+ * from the same handful of parts and only the numbers differ, which is what
+ * lets the in-game tuner expose the whole design as sliders instead of three
+ * hard-coded special cases.
  */
 export interface RigSpec {
-  /** Overall size multiplier. 1 gives a ~1.0 unit tall character. */
   scale: number;
+
+  // --- Proportions ---
+  /** Head radius. Body height is what sets the head-to-body ratio against it. */
+  headRadius: number;
+  bodyHeight: number;
+  bodyTopRadius: number;
+  bodyBottomRadius: number;
+  hemHeight: number;
+  hemRadius: number;
+
+  // --- Tessellation. Lower is blockier and cheaper. ---
+  bodySegments: number;
+  headSegments: number;
+  headRings: number;
+
+  // --- Face ---
+  eyeSize: number;
+  /** Horizontal eye offset, as a fraction of head radius. */
+  eyeSpacing: number;
+  /** Vertical eye offset from the head centre, as a fraction of head radius. */
+  eyeHeight: number;
+  blush: number;
+
+  // --- Hair ---
+  /** How far down the front the crown reaches, radians from the top. */
+  capDepth: number;
+  /** How far down the back and sides reach, radians from the top. */
+  backDepth: number;
+  /** Angular size of the opening left for the face, radians. */
+  faceGap: number;
+  /** Parting position. 0.5 is centred; 0.3 is a 3:7 side part. */
+  partRatio: number;
+  fringeDrop: number;
+  /** Makes one side of the fringe hang lower than the other, 0..1. */
+  fringeAsym: number;
+  sideLockLength: number;
+  sideLockAsym: number;
+  tailLength: number;
+  tailThickness: number;
+  /** How high up the back of the skull the tail is tied, as a fraction of r. */
+  tailAnchorY: number;
+  /** How far the tail kicks backwards from straight down, radians. */
+  tailTilt: number;
+
+  // --- Limbs ---
+  handRadius: number;
+  footRadius: number;
+
+  goggles: boolean;
+
+  // --- Colours ---
   skin: number;
   hair: number;
-  /** Main colour of the cone body. */
+  /** Slightly darker hair tone used on the fringe, for cheap depth. */
+  hairShade: number;
+  hairTie: number;
   body: number;
-  /** Hem band around the bottom of the cone. */
   hem: number;
-  /** Collar / scarf ring under the head. */
   accent: number;
-  /** Colour of the little feet that pop out when walking. */
   boots: number;
-  hairStyle: "ponytail" | "bob" | "spiky";
-  /** Length of the ponytail, in local units. 0 disables it. */
-  tailLength: number;
-  /** Goggles pushed up on the forehead. */
-  goggles: boolean;
   gogglesColor: number;
 }
 
 export const DEFAULT_RIG_SPEC: RigSpec = {
   scale: 1,
+
+  // Roughly 2.4 heads tall: head 0.46 across, body 0.62 -- big head, small
+  // sharp body, which is where all the cuteness comes from.
+  headRadius: 0.23,
+  bodyHeight: 0.62,
+  bodyTopRadius: 0.06,
+  bodyBottomRadius: 0.24,
+  hemHeight: 0.05,
+  hemRadius: 0.255,
+
+  bodySegments: 6,
+  headSegments: 8,
+  headRings: 5,
+
+  eyeSize: 0.038,
+  eyeSpacing: 0.36,
+  eyeHeight: 0.0,
+  blush: 0.03,
+
+  capDepth: 1.0,
+  backDepth: 1.75,
+  faceGap: 1.7,
+  partRatio: 0.5,
+  fringeDrop: 0.14,
+  fringeAsym: 0,
+  sideLockLength: 0.16,
+  sideLockAsym: 0,
+  tailLength: 0.4,
+  tailThickness: 0.075,
+  tailAnchorY: 0.55,
+  tailTilt: 0.5,
+
+  handRadius: 0.062,
+  footRadius: 0.05,
+
+  goggles: false,
+
   skin: palette.skin,
   hair: palette.heathHair,
+  hairShade: palette.heathHair,
+  hairTie: palette.suitCharcoal,
   body: palette.suitBlack,
   hem: palette.suitCharcoal,
   accent: palette.shirtWhite,
   boots: palette.bootBlack,
-  hairStyle: "bob",
-  tailLength: 0,
-  goggles: false,
   gogglesColor: palette.sinclairGoggle,
 };
 
 /** Named joints an animation is allowed to drive. */
 export interface RigJoints {
-  /** Bounce and squash live here, above everything else. */
   bob: THREE.Group;
-  /** The cone. Lean and sway go here. */
   body: THREE.Group;
   head: THREE.Group;
-  /** Whole hair mass; small counter-rotations sell the head's weight. */
   hair: THREE.Group;
-  /** Ponytail, swings behind. */
   hairTail: THREE.Group;
-  /**
-   * Floating orb hands. Hidden at rest -- an animation that needs hands sets
-   * `visible = true` and positions them. Also usable as prop mount points.
-   */
   handL: THREE.Group;
   handR: THREE.Group;
-  /** Floating orb feet, same deal: they only appear while walking. */
   footL: THREE.Group;
   footR: THREE.Group;
 }
 
-/** One joint's rest state, captured at build time. */
 interface RestTransform {
   joint: THREE.Object3D;
   position: THREE.Vector3;
@@ -73,13 +147,13 @@ interface RestTransform {
 }
 
 /**
- * A procedural low-poly character: a cone for a body, a ball for a head, and
- * limbs that only exist when an animation asks for them.
+ * A procedural low-poly character: a sharp cone for a body, a faceted ball for
+ * a head, and limbs that only exist when an animation asks for them.
  *
  * Dropping jointed arms and legs is what makes this readable at 80 pixels tall.
  * There is no skinning to go wrong, the silhouette stays a clean triangle, and
- * all the character comes from the head -- which is why the hair gets far more
- * geometry than anything else here.
+ * all the character comes from the head -- which is why the hair gets most of
+ * the parameters here.
  */
 export class Rig {
   /** Attach this to the scene. Drive its position / rotation.y to move. */
@@ -93,6 +167,12 @@ export class Rig {
     this.spec = { ...DEFAULT_RIG_SPEC, ...spec };
     this.joints = this.build();
     this.captureRest();
+  }
+
+  /** Total height, useful for placing bubbles and name tags above the head. */
+  get height(): number {
+    const s = this.spec;
+    return (s.bodyHeight + s.headRadius * 2) * s.scale;
   }
 
   /** Restore every joint to its rest transform and rest visibility. */
@@ -128,6 +208,13 @@ export class Rig {
     }
   }
 
+  /** Free the geometry this rig owns. Materials are shared and stay cached. */
+  dispose(): void {
+    this.root.traverse((child) => {
+      if (child instanceof THREE.Mesh) child.geometry.dispose();
+    });
+  }
+
   private build(): RigJoints {
     const s = this.spec;
     this.root.scale.setScalar(s.scale);
@@ -137,59 +224,55 @@ export class Rig {
     this.root.add(bob);
 
     // --- Body ------------------------------------------------------------
-    const bodyHeight = 0.52;
     const bodyGroup = new THREE.Group();
     bodyGroup.name = "body";
-    bodyGroup.position.y = 0.02;
     bob.add(bodyGroup);
 
-    const bodyMesh = cone(0.13, 0.31, bodyHeight, s.body);
-    bodyMesh.position.y = bodyHeight / 2;
+    const bodyMesh = cone(
+      s.bodyTopRadius,
+      s.bodyBottomRadius,
+      s.bodyHeight,
+      s.body,
+      s.bodySegments,
+    );
+    bodyMesh.position.y = s.bodyHeight / 2;
     bodyGroup.add(bodyMesh);
 
-    // Hem band: a slightly wider, shorter cone slice at the base. Gives the
-    // silhouette a foot to stand on instead of tapering into the floor.
-    const hem = cone(0.30, 0.33, 0.07, s.hem);
-    hem.position.y = 0.035;
+    // Hem: a slightly wider ring at the base so the cone has a foot to stand
+    // on rather than tapering into the floor.
+    const hem = cone(
+      s.hemRadius * 0.94,
+      s.hemRadius,
+      s.hemHeight,
+      s.hem,
+      s.bodySegments,
+    );
+    hem.position.y = s.hemHeight / 2;
     bodyGroup.add(hem);
 
-    // Collar ring right under the head.
-    const collar = cone(0.115, 0.17, 0.06, s.accent);
-    collar.position.y = bodyHeight - 0.02;
+    // Collar right under the head.
+    const collar = cone(
+      s.bodyTopRadius * 0.95,
+      s.bodyTopRadius * 1.9,
+      0.05,
+      s.accent,
+      s.bodySegments,
+    );
+    collar.position.y = s.bodyHeight - 0.03;
     bodyGroup.add(collar);
 
     // --- Head ------------------------------------------------------------
     const head = new THREE.Group();
     head.name = "head";
-    head.position.y = bodyHeight + 0.03;
+    head.position.y = s.bodyHeight;
     bodyGroup.add(head);
 
-    const headRadius = 0.245;
-    const headMesh = sphere(headRadius, s.skin, 12, 8);
-    headMesh.position.y = headRadius * 0.88;
+    const centre = s.headRadius * 0.95;
+    const headMesh = sphere(s.headRadius, s.skin, s.headSegments, s.headRings);
+    headMesh.position.y = centre;
     head.add(headMesh);
 
-    // Eyes: flat discs pressed onto the front of the ball (-Z is forward).
-    for (const side of [-1, 1] as const) {
-      const eye = new THREE.Mesh(
-        new THREE.CircleGeometry(0.036, 8),
-        flatMaterial(palette.suitBlack),
-      );
-      eye.position.set(side * 0.082, headRadius * 0.9, -headRadius * 0.93);
-      eye.rotation.y = Math.PI;
-      head.add(eye);
-    }
-
-    // Blush: the one warm accent on an otherwise dark character.
-    for (const side of [-1, 1] as const) {
-      const blush = new THREE.Mesh(
-        new THREE.CircleGeometry(0.032, 7),
-        flatMaterial(palette.skinDark),
-      );
-      blush.position.set(side * 0.155, headRadius * 0.72, -headRadius * 0.78);
-      blush.rotation.y = Math.PI + side * 0.5;
-      head.add(blush);
-    }
+    this.buildFace(head, centre, s);
 
     const hair = new THREE.Group();
     hair.name = "hair";
@@ -197,26 +280,212 @@ export class Rig {
     const hairTail = new THREE.Group();
     hairTail.name = "hairTail";
     hair.add(hairTail);
-    this.buildHair(hair, hairTail, headRadius, s);
+    this.buildHair(hair, hairTail, centre, s);
 
-    if (s.goggles) this.buildGoggles(head, headRadius, s);
+    if (s.goggles) this.buildGoggles(head, centre, s);
 
     // --- Floating limbs --------------------------------------------------
     // All four start hidden. Animations opt in, which is what makes "pop out a
     // hand to hold a mug" a two-line change rather than a rig change.
-    const handL = this.buildOrb("handL", -0.27, 0.36, -0.04, 0.072, s.skin);
-    const handR = this.buildOrb("handR", 0.27, 0.36, -0.04, 0.072, s.skin);
+    const handY = s.bodyHeight * 0.6;
+    const handX = s.bodyBottomRadius * 0.88;
+    const handL = this.buildOrb("handL", -handX, handY, -0.04, s.handRadius, s.skin);
+    const handR = this.buildOrb("handR", handX, handY, -0.04, s.handRadius, s.skin);
     bodyGroup.add(handL, handR);
 
-    // Feet hang off `root`, not `bob`. That keeps them on the floor while the
-    // body hops, which is what opens the gap you actually see them through.
-    // Far enough forward to clear the flare of the cone -- tucked underneath
-    // they are geometrically present but never visible.
-    const footL = this.buildOrb("footL", -0.115, 0.055, -0.28, 0.055, s.boots);
-    const footR = this.buildOrb("footR", 0.115, 0.055, -0.28, 0.055, s.boots);
+    // Feet hang off `root`, not `bob`, so they stay on the floor while the body
+    // hops -- that gap is the only reason you ever see them. They also sit well
+    // forward of the cone's flare, or they would be permanently hidden inside it.
+    const footX = s.bodyBottomRadius * 0.48;
+    const footZ = -(s.bodyBottomRadius + s.footRadius * 0.55);
+    const footL = this.buildOrb("footL", -footX, s.footRadius, footZ, s.footRadius, s.boots);
+    const footR = this.buildOrb("footR", footX, s.footRadius, footZ, s.footRadius, s.boots);
     this.root.add(footL, footR);
 
     return { bob, body: bodyGroup, head, hair, hairTail, handL, handR, footL, footR };
+  }
+
+  private buildFace(head: THREE.Group, centre: number, s: RigSpec): void {
+    const r = s.headRadius;
+    for (const side of [-1, 1] as const) {
+      const eye = new THREE.Mesh(
+        new THREE.CircleGeometry(s.eyeSize, 6),
+        flatMaterial(palette.suitBlack),
+      );
+      eye.position.set(side * s.eyeSpacing * r, centre + s.eyeHeight * r, -r * 0.95);
+      eye.rotation.y = Math.PI;
+      head.add(eye);
+    }
+
+    if (s.blush <= 0) return;
+    for (const side of [-1, 1] as const) {
+      const blush = new THREE.Mesh(
+        new THREE.CircleGeometry(s.blush, 6),
+        flatMaterial(palette.skinDark),
+      );
+      blush.position.set(
+        side * r * 0.66,
+        centre + (s.eyeHeight - 0.28) * r,
+        -r * 0.72,
+      );
+      blush.rotation.y = Math.PI + side * 0.6;
+      head.add(blush);
+    }
+  }
+
+  /**
+   * Hair, built from five parametric parts: a crown, a back-and-sides shell
+   * with a wedge cut out for the face, two fringe slabs either side of a
+   * parting, two side locks, and a tail.
+   *
+   * Slabs rather than clusters of little spheres: at this size the detail just
+   * turns to noise, and the flat planes read as stylised hair instead of as a
+   * bad attempt at strands.
+   */
+  private buildHair(
+    hair: THREE.Group,
+    hairTail: THREE.Group,
+    centre: number,
+    s: RigSpec,
+  ): void {
+    const r = s.headRadius;
+    const shellRadius = r * 1.07;
+    const seg = s.headSegments;
+    const rings = s.headRings;
+
+    // 1. Crown. A full ring around the top -- this is the piece the face gap
+    //    does not apply to, so it must stop above the eyes.
+    const crown = new THREE.Mesh(
+      new THREE.SphereGeometry(shellRadius, seg, rings, 0, Math.PI * 2, 0, s.capDepth),
+      flatMaterialDouble(s.hair),
+    );
+    crown.position.y = centre;
+    crown.castShadow = true;
+    hair.add(crown);
+
+    // 2. Back and sides. Reaches below the ear, with a wedge left open at the
+    //    front. In three.js phi runs from -X, so the face at -Z sits at
+    //    phi = 3pi/2 and the covered arc starts just past the gap's far edge.
+    const back = new THREE.Mesh(
+      new THREE.SphereGeometry(
+        shellRadius,
+        seg,
+        rings,
+        Math.PI * 1.5 + s.faceGap / 2,
+        Math.PI * 2 - s.faceGap,
+        0,
+        s.backDepth,
+      ),
+      flatMaterialDouble(s.hair),
+    );
+    back.position.y = centre;
+    back.castShadow = true;
+    hair.add(back);
+
+    // 3. Fringe. Slabs laid around the front of the skull, split at a parting
+    //    line; `partRatio` slides that line sideways, which is the whole
+    //    difference between a centre part and a 3:7 one.
+    //
+    //    Laid out by ANGLE, not by x. A flat slab wide enough to span the face
+    //    in x punches straight out through the sides of the head, because the
+    //    skull is far narrower at the front than it is across the middle.
+    const halfSpan = 1.2;
+    const partAngle = (s.partRatio - 0.5) * 2 * halfSpan;
+    const sides: Array<{ from: number; to: number; drop: number }> = [
+      { from: -halfSpan, to: partAngle, drop: s.fringeDrop * (1 + s.fringeAsym) },
+      { from: partAngle, to: halfSpan, drop: s.fringeDrop * (1 - s.fringeAsym) },
+    ];
+    const surface = r * 0.9;
+    for (const side of sides) {
+      if (side.to - side.from < 0.05 || side.drop < 0.01) continue;
+      // Two pieces per side: enough to follow the curve, few enough to stay
+      // schematic instead of turning into a fringe of individual strands.
+      const pieces = 2;
+      for (let i = 0; i < pieces; i++) {
+        const from = THREE.MathUtils.lerp(side.from, side.to, i / pieces);
+        const to = THREE.MathUtils.lerp(side.from, side.to, (i + 1) / pieces);
+        const mid = (from + to) / 2;
+        const chord = 2 * surface * Math.sin((to - from) / 2);
+        const slab = box(chord * 1.08, side.drop, 0.05, s.hairShade);
+        // Hung from a fixed hairline rather than centred on one, so
+        // `fringeDrop` reads as "how far down the face it comes" and a short
+        // fringe stays clear of the eyes.
+        slab.position.set(
+          Math.sin(mid) * surface,
+          centre + r * 0.75 - side.drop / 2,
+          -Math.cos(mid) * surface,
+        );
+        slab.rotation.y = Math.PI - mid;
+        slab.rotation.x = 0.08;
+        hair.add(slab);
+      }
+    }
+
+    // 4. Side locks framing the face.
+    const lockLengths = [
+      s.sideLockLength * (1 + s.sideLockAsym),
+      s.sideLockLength * (1 - s.sideLockAsym),
+    ];
+    for (let i = 0; i < 2; i++) {
+      const side = i === 0 ? -1 : 1;
+      const length = lockLengths[i] ?? 0;
+      if (length < 0.02) continue;
+      const lock = cone(r * 0.3, r * 0.14, length, s.hair, 5);
+      lock.position.set(side * r * 0.9, centre - length * 0.35, -r * 0.08);
+      lock.rotation.z = side * 0.1;
+      hair.add(lock);
+    }
+
+    // 5. Tail. Two tapering segments chained so a single rotation on `hairTail`
+    //    makes the whole thing arc rather than pivot like a stick.
+    hairTail.position.set(0, centre + r * s.tailAnchorY, r * 0.82);
+    hairTail.rotation.x = s.tailTilt;
+    if (s.tailLength < 0.02) return;
+
+    const tie = cone(s.tailThickness * 1.15, s.tailThickness * 1.15, 0.04, s.hairTie, 6);
+    hairTail.add(tie);
+
+    const upperLength = s.tailLength * 0.55;
+    const upper = cone(s.tailThickness, s.tailThickness * 0.8, upperLength, s.hair, 6);
+    upper.position.y = -upperLength / 2;
+    hairTail.add(upper);
+
+    const lowerJoint = new THREE.Group();
+    lowerJoint.name = "tailLower";
+    lowerJoint.position.y = -upperLength;
+    lowerJoint.rotation.x = 0.25;
+    hairTail.add(lowerJoint);
+
+    const lowerLength = s.tailLength * 0.5;
+    const lower = cone(
+      s.tailThickness * 0.8,
+      s.tailThickness * 0.22,
+      lowerLength,
+      s.hair,
+      6,
+    );
+    lower.position.y = -lowerLength / 2;
+    lowerJoint.add(lower);
+  }
+
+  private buildGoggles(head: THREE.Group, centre: number, s: RigSpec): void {
+    const r = s.headRadius;
+    const y = centre + r * 0.55;
+    const strap = new THREE.Mesh(
+      new THREE.TorusGeometry(r * 1.02, 0.026, 4, 10),
+      flatMaterial(palette.metalDark),
+    );
+    strap.rotation.x = Math.PI / 2 - 0.22;
+    strap.position.y = y;
+    strap.castShadow = true;
+    head.add(strap);
+
+    for (const side of [-1, 1] as const) {
+      const lens = cone(0.058, 0.048, 0.045, s.gogglesColor, 6);
+      lens.rotation.x = Math.PI / 2 + 0.28;
+      lens.position.set(side * r * 0.38, y + 0.02, -r * 0.9);
+      head.add(lens);
+    }
   }
 
   /** A hidden group holding a single ball. Doubles as a prop mount point. */
@@ -232,176 +501,12 @@ export class Rig {
     group.name = name;
     group.position.set(x, y, z);
     group.visible = false;
-    group.add(sphere(radius, color, 8, 6));
+    group.add(sphere(radius, color, 6, 4));
     return group;
   }
 
-  /**
-   * Hair gets the detail budget. Everything else on this rig is two primitives,
-   * so the hair is the only place a silhouette can say which character this is
-   * from across the room.
-   */
-  private buildHair(
-    hair: THREE.Group,
-    hairTail: THREE.Group,
-    headRadius: number,
-    s: RigSpec,
-  ): void {
-    const centre = headRadius * 0.88;
-
-    // Hair shell in two pieces. A single dome cannot work: pull it low enough
-    // to cover the back of the head and it swallows the face too, which is what
-    // turns the character into a bowl.
-    const shellRadius = headRadius * 1.07;
-
-    // 1. Crown -- a full ring around the top of the skull.
-    const crown = new THREE.Mesh(
-      new THREE.SphereGeometry(shellRadius, 12, 8, 0, Math.PI * 2, 0, 0.95),
-      flatMaterialDouble(s.hair),
-    );
-    crown.position.y = centre;
-    crown.castShadow = true;
-    hair.add(crown);
-
-    // 2. Back and sides -- reaches below the ear, with a gap left open at the
-    // front for the face. In three.js phi runs from -X, so the face at -Z sits
-    // at phi = 3pi/2; the covered arc starts just past the far edge of the gap.
-    const faceGap = s.hairStyle === "spiky" ? 1.9 : 1.55;
-    const back = new THREE.Mesh(
-      new THREE.SphereGeometry(
-        shellRadius,
-        12,
-        8,
-        Math.PI * 1.5 + faceGap / 2,
-        Math.PI * 2 - faceGap,
-        0.8,
-        s.hairStyle === "spiky" ? 1.05 : 1.3,
-      ),
-      flatMaterialDouble(s.hair),
-    );
-    back.position.y = centre;
-    back.castShadow = true;
-    hair.add(back);
-
-    // Fringe: a row of overlapping balls across the brow. Uneven radii keep it
-    // from reading as a machined part.
-    const fringeCount = s.hairStyle === "spiky" ? 5 : 6;
-    for (let i = 0; i < fringeCount; i++) {
-      const t = i / (fringeCount - 1);
-      const angle = THREE.MathUtils.lerp(-1.15, 1.15, t);
-      const radius = 0.055 + Math.cos(angle) * 0.028;
-      const lock = sphere(radius, s.hair, 7, 5);
-      lock.position.set(
-        Math.sin(angle) * headRadius * 0.92,
-        centre + headRadius * (s.hairStyle === "spiky" ? 0.5 : 0.34),
-        -Math.cos(angle) * headRadius * 0.86,
-      );
-      hair.add(lock);
-    }
-
-    if (s.hairStyle === "spiky") {
-      // Short and messy: a few tufts sticking up out of the cap.
-      const tufts: Array<[number, number, number]> = [
-        [-0.1, 0.2, -0.02],
-        [0.06, 0.24, 0.04],
-        [0.17, 0.16, -0.08],
-        [-0.18, 0.15, 0.06],
-      ];
-      for (const [x, y, z] of tufts) {
-        const tuft = cone(0.005, 0.055, 0.13, s.hair, 6);
-        tuft.position.set(x, centre + headRadius * 0.72 + y * 0.35, z);
-        tuft.rotation.set(z * 2.2, 0, -x * 2.4);
-        hair.add(tuft);
-      }
-    } else {
-      // Side locks framing the face, longer on the bob.
-      const lockLength = s.hairStyle === "bob" ? 0.26 : 0.17;
-      for (const side of [-1, 1] as const) {
-        const lock = cone(0.07, 0.04, lockLength, s.hair, 6);
-        lock.position.set(
-          side * headRadius * 0.88,
-          centre - lockLength * 0.35,
-          -headRadius * 0.12,
-        );
-        lock.rotation.z = side * 0.12;
-        hair.add(lock);
-      }
-    }
-
-    if (s.hairStyle === "bob") {
-      // Mass at the nape, which is what makes a bob a bob from behind.
-      const nape = sphere(headRadius * 0.72, s.hair, 9, 6);
-      nape.position.set(0, centre - headRadius * 0.42, headRadius * 0.52);
-      nape.scale.set(1.05, 0.85, 0.75);
-      hair.add(nape);
-    } else {
-      // Smaller version for the other two, so the skull cap does not end in a
-      // hard rim halfway down the back of the head.
-      const nape = sphere(headRadius * 0.55, s.hair, 8, 6);
-      nape.position.set(0, centre - headRadius * 0.18, headRadius * 0.62);
-      nape.scale.set(1.1, 0.9, 0.7);
-      hair.add(nape);
-    }
-
-    // --- Ponytail --------------------------------------------------------
-    hairTail.position.set(0, centre + headRadius * 0.55, headRadius * 0.78);
-    if (s.tailLength <= 0) return;
-
-    const tie = new THREE.Mesh(
-      new THREE.TorusGeometry(0.055, 0.022, 5, 8),
-      flatMaterial(s.hem),
-    );
-    tie.rotation.x = Math.PI / 2;
-    tie.castShadow = true;
-    hairTail.add(tie);
-
-    // Chain of shrinking balls. Each one is parented to the last, so a single
-    // rotation on `hairTail` makes the whole tail arc rather than pivot rigidly.
-    const segments = 4;
-    let parent: THREE.Object3D = hairTail;
-    for (let i = 0; i < segments; i++) {
-      const t = i / (segments - 1);
-      const segment = new THREE.Group();
-      segment.name = `tail${i}`;
-      segment.position.y = i === 0 ? -0.04 : -(s.tailLength / segments);
-      // Each link droops a little more than the one above it.
-      segment.rotation.x = i === 0 ? -0.35 : 0.12;
-      parent.add(segment);
-
-      const ball = sphere(
-        THREE.MathUtils.lerp(0.085, 0.042, t),
-        s.hair,
-        8,
-        6,
-      );
-      ball.position.y = -(s.tailLength / segments) * 0.4;
-      segment.add(ball);
-
-      parent = segment;
-    }
-  }
-
-  private buildGoggles(head: THREE.Group, headRadius: number, s: RigSpec): void {
-    const y = headRadius * 1.28;
-    const strap = new THREE.Mesh(
-      new THREE.TorusGeometry(headRadius * 0.98, 0.028, 5, 12),
-      flatMaterial(palette.metalDark),
-    );
-    strap.rotation.x = Math.PI / 2 - 0.25;
-    strap.position.y = y;
-    strap.castShadow = true;
-    head.add(strap);
-
-    for (const side of [-1, 1] as const) {
-      const lens = cone(0.062, 0.052, 0.05, s.gogglesColor, 8);
-      lens.rotation.x = Math.PI / 2 + 0.3;
-      lens.position.set(side * 0.085, y + 0.02, -headRadius * 0.88);
-      head.add(lens);
-    }
-  }
-
   private captureRest(): void {
-    const record = (joint: THREE.Object3D) => {
+    for (const joint of Object.values(this.joints)) {
       this.rest.push({
         joint,
         position: joint.position.clone(),
@@ -409,8 +514,7 @@ export class Rig {
         scale: joint.scale.clone(),
         visible: joint.visible,
       });
-    };
-    for (const joint of Object.values(this.joints)) record(joint);
+    }
   }
 }
 

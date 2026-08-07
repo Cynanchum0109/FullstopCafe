@@ -10,6 +10,7 @@ import { Office, ROOM_MAX_X, ROOM_MAX_Z, ROOM_MIN_X, ROOM_MIN_Z } from "./world/
 import { Actor } from "./actors/Actor";
 import { profiles } from "./actors/profiles";
 import { HUD } from "./ui/HUD";
+import { RigTuner } from "./ui/RigTuner";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#app");
 const overlay = document.querySelector<HTMLDivElement>("#overlay");
@@ -38,6 +39,7 @@ const actors = profiles.map(
 for (const actor of actors) scene.add(actor.object);
 
 const hud = new HUD(overlay, clock);
+new RigTuner(overlay, actors, camera);
 
 // --- Temporary phase-1 driver -------------------------------------------
 // Manual control exists only to validate the walk cycle and camera feel. The

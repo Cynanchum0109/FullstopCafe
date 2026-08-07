@@ -48,11 +48,17 @@ export const palette = {
   glovePale: 0xc9c9d2,
 
   // --- Per character accents ---
-  heathHair: 0x53382a,
+  // Each character gets a hair tone plus a darker shade used on the fringe,
+  // which is the cheapest way to give a two-primitive head some depth.
+  heathHair: 0x5b3d2b,
+  heathHairShade: 0x452c1e,
   heathTie: 0x1a1a20,
-  hongluHair: 0x2e2740,
+  hongluHair: 0x342c4c,
+  hongluHairShade: 0x241e36,
+  hongluTie: 0x4fb3a5,
   hongluCoat: 0x1e1e26,
-  sinclairHair: 0xd9c26a,
+  sinclairHair: 0xd9b96a,
+  sinclairHairShade: 0xbd9a4e,
   sinclairGear: 0x5f5f4a,
   sinclairGoggle: 0x7fb0c0,
 } as const;

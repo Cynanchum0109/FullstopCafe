@@ -1,0 +1,71 @@
+:root {
+  color-scheme: dark;
+  font-family: ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #10101a;
+}
+
+#app {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  touch-action: none;
+}
+
+/* DOM overlay sits above the canvas. It is transparent to pointer events by
+   default; individual panels opt back in. */
+#overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+#overlay > * {
+  pointer-events: auto;
+}
+
+.panel {
+  position: absolute;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(16, 16, 26, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e8e8f0;
+  font-size: 12px;
+  line-height: 1.5;
+  backdrop-filter: blur(6px);
+}
+
+.panel--hud {
+  top: 12px;
+  left: 12px;
+  min-width: 180px;
+}
+
+.hud__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hud__label {
+  opacity: 0.6;
+}
+
+.hud__hint {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  opacity: 0.55;
+  font-size: 11px;
+}

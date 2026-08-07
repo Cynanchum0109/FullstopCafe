@@ -1,0 +1,9 @@
+# Third-party character reference art. Kept local: pushing it would republish
+# someone else's sprites. Remove this line if you want it in the repo.
+ref/
+
+node_modules/
+dist/
+.vite/
+*.local
+.DS_Store

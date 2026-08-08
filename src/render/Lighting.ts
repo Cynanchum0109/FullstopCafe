@@ -27,6 +27,16 @@ const SKY_KEYS: SkyKey[] = [
 ];
 
 /**
+ * Time-of-day lighting switch. Off: the day cycle is kept intact but the room
+ * is lit at one fixed hour, so the light never drifts while you work. Flip to
+ * `true` to bring the cycle back.
+ */
+export const TIME_OF_DAY_LIGHTING = false;
+
+/** Hour the room freezes at while the cycle is off: 0.4 of a day, ~09:36. */
+export const FROZEN_DAY_FRACTION = 0.4;
+
+/**
  * Two lights, no more: a hemisphere fill that keeps shadowed faces from going
  * muddy, and one directional sun that casts the shadows. Both are driven by the
  * time of day so the room warms up and cools down over the cycle.

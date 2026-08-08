@@ -18,8 +18,8 @@ export const ROOM_MIN_Z = -ROOM.depth / 2;
 export const ROOM_MAX_Z = ROOM.depth / 2;
 
 /**
- * The room shell: floor, two walls, a window, a rug. Furniture lives in its own
- * module so this stays purely architectural.
+ * The room shell: floor, two walls, a window. Furniture -- the rug included --
+ * lives in its own module so this stays purely architectural.
  */
 export class Office {
   readonly group = new THREE.Group();
@@ -29,7 +29,6 @@ export class Office {
   constructor() {
     this.group.name = "office";
     this.buildFloor();
-    this.buildRug();
     this.glass = this.buildBackWall();
     this.buildSideWall();
   }
@@ -73,17 +72,6 @@ export class Office {
       );
       this.group.add(groove);
     }
-  }
-
-  private buildRug(): void {
-    const rug = boxAt(3.2, 0.04, 2.3, palette.rug, 1.0, 0.02, 1.0, {
-      castShadow: false,
-    });
-    this.group.add(rug);
-    const trim = boxAt(2.8, 0.05, 1.9, palette.rugTrim, 1.0, 0.03, 1.0, {
-      castShadow: false,
-    });
-    this.group.add(trim);
   }
 
   /** The -Z wall, with a window punched through it. Returns the glass mesh. */

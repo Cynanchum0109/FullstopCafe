@@ -36,14 +36,7 @@ const SWATCHES = [
 
 type Tool = "brush" | "eraser" | "line" | "rect" | "ellipse" | "fill";
 
-type TransformKind = "flip-x" | "flip-y" | "rotate-cw" | "rotate-ccw";
-
-const TRANSFORM_LABELS: Record<TransformKind, string> = {
-  "flip-x": "已左右翻转",
-  "flip-y": "已上下翻转",
-  "rotate-cw": "已右转 90°",
-  "rotate-ccw": "已左转 90°",
-};
+type FlipKind = "flip-x" | "flip-y";
 
 const TOOLS: Array<{ value: Tool; label: string }> = [
   { value: "brush", label: "笔" },
@@ -99,6 +92,12 @@ export class PaintBoard {
   private preview: ImageData | undefined;
   private history: ImageData[] = [];
 
+  /** The drawing as it was before the current rotate session, and its angle. */
+  private rotateBase: HTMLCanvasElement | undefined;
+  private rotation = 0;
+  private rotationInput: HTMLInputElement | undefined;
+  private rotationReadout: HTMLSpanElement | undefined;
+
   constructor(private readonly host: PaintBoardHost) {
     this.root = document.createElement("div");
     this.root.className = "panel paint-panel";
@@ -144,6 +143,7 @@ export class PaintBoard {
     }
 
     this.history = [];
+    this.endRotate();
     this.drawGuide();
   }
 
@@ -169,6 +169,9 @@ export class PaintBoard {
 
       this.resizeToPiece();
       this.context().drawImage(backup, 0, 0, this.paint.width, this.paint.height);
+      // The snapshot the rotation slider holds is the old size, and the board's
+      // aspect just changed, so the session cannot be carried across.
+      this.endRotate();
       this.commit();
     } else {
       this.resizeToPiece();
@@ -340,12 +343,12 @@ export class PaintBoard {
     const transforms = document.createElement("div");
     transforms.className = "paint__buttons";
     transforms.append(
-      this.button("左右翻转", () => this.transform("flip-x")),
-      this.button("上下翻转", () => this.transform("flip-y")),
-      this.button("左转 90°", () => this.transform("rotate-ccw")),
-      this.button("右转 90°", () => this.transform("rotate-cw")),
+      this.button("左右翻转", () => this.flip("flip-x")),
+      this.button("上下翻转", () => this.flip("flip-y")),
     );
     tools.appendChild(transforms);
+
+    tools.appendChild(this.buildRotationRow());
 
     const fillRow = document.createElement("div");
     fillRow.className = "paint__buttons";
@@ -494,6 +497,7 @@ export class PaintBoard {
 
     this.stack.addEventListener("pointerdown", (event) => {
       if (!this.host.piece()) return;
+      this.endRotate();
       // Painting deliberately does not change the piece. The drawing is just a
       // drawing until you say what it is for -- geometry or texture -- which
       // keeps a stray stroke from silently altering the model.
@@ -692,48 +696,146 @@ export class PaintBoard {
   // --- Transforms --------------------------------------------------------
 
   /**
-   * Flip or quarter-turn the whole drawing in place.
+   * Mirror the drawing in place. Lossless: no scaling, so flipping twice
+   * returns exactly the pixels you started with.
    *
-   * Undoable like any stroke, and it moves only the painting: the guide
-   * outline belongs to the piece, so it stays put and you can see how the
-   * turned image now lands on the shape.
+   * The guide outline belongs to the piece, not the drawing, so it stays put
+   * and you can see how the flipped image now lands on the shape.
    */
-  private transform(kind: TransformKind): void {
+  private flip(kind: FlipKind): void {
     if (!this.host.piece()) return;
+    this.endRotate();
     this.pushHistory();
 
     const width = this.paint.width;
     const height = this.paint.height;
-    const backup = document.createElement("canvas");
-    backup.width = width;
-    backup.height = height;
-    backup.getContext("2d")?.drawImage(this.paint, 0, 0);
+    const backup = this.snapshot();
 
     const context = this.context();
     context.save();
     context.globalCompositeOperation = "source-over";
     context.clearRect(0, 0, width, height);
-
-    if (kind === "flip-x") {
-      context.setTransform(-1, 0, 0, 1, width, 0);
-      context.drawImage(backup, 0, 0);
-    } else if (kind === "flip-y") {
-      context.setTransform(1, 0, 0, -1, 0, height);
-      context.drawImage(backup, 0, 0);
-    } else {
-      // A quarter turn swaps the board's aspect, but the board's proportions
-      // are the piece's and cannot change. Scale the turned image down to the
-      // largest size that still fits rather than letting it run off the edges.
-      const fit = Math.min(width / height, height / width);
-      context.setTransform(1, 0, 0, 1, width / 2, height / 2);
-      context.rotate(kind === "rotate-cw" ? Math.PI / 2 : -Math.PI / 2);
-      context.scale(fit, fit);
-      context.drawImage(backup, -width / 2, -height / 2);
-    }
-
+    if (kind === "flip-x") context.setTransform(-1, 0, 0, 1, width, 0);
+    else context.setTransform(1, 0, 0, -1, 0, height);
+    context.drawImage(backup, 0, 0);
     context.restore();
+
     this.commit();
-    this.say(TRANSFORM_LABELS[kind]);
+    this.say(kind === "flip-x" ? "已左右翻转" : "已上下翻转");
+  }
+
+  /**
+   * Free rotation on a slider.
+   *
+   * The angle is *absolute*, not a series of nudges. Dragging opens a session
+   * that snapshots the drawing once, and every tick re-renders that same
+   * snapshot at the slider's angle. Rendering each tick on top of the previous
+   * one is what made an earlier version shrink a little further every time you
+   * touched it: the board is locked to the piece's aspect, so a turned image
+   * has to be scaled down to fit back inside, and repeating that compounds.
+   * Against a fixed snapshot the scale is a function of the angle alone --
+   * dragging back to 0° restores the original exactly.
+   *
+   * The session ends when anything else changes the pixels, at which point the
+   * rotated result becomes the new starting point.
+   */
+  private buildRotationRow(): HTMLElement {
+    const row = document.createElement("label");
+    row.className = "tuner__row";
+
+    const name = document.createElement("span");
+    name.className = "tuner__label";
+    name.textContent = "旋转";
+
+    const input = document.createElement("input");
+    input.type = "range";
+    input.min = "-180";
+    input.max = "180";
+    input.step = "1";
+    input.value = "0";
+
+    const readout = document.createElement("span");
+    readout.className = "tuner__value";
+    readout.textContent = "0°";
+
+    input.addEventListener("input", () => {
+      if (!this.host.piece()) {
+        input.value = String(this.rotation);
+        return;
+      }
+      this.beginRotate();
+      this.rotation = Number(input.value);
+      readout.textContent = `${this.rotation}°`;
+      this.applyRotation();
+    });
+
+    this.rotationInput = input;
+    this.rotationReadout = readout;
+    row.append(name, input, readout);
+    return row;
+  }
+
+  /** Snapshot the drawing once, at the start of a rotate session. */
+  private beginRotate(): void {
+    if (this.rotateBase) return;
+    // Only the first tick of a drag is an undo step; the rest of the drag is
+    // the same edit being adjusted.
+    this.pushHistory();
+    this.rotateBase = this.snapshot();
+  }
+
+  /** Draw the session's snapshot at the current angle. */
+  private applyRotation(): void {
+    const base = this.rotateBase;
+    if (!base) return;
+
+    const width = this.paint.width;
+    const height = this.paint.height;
+    const angle = (this.rotation * Math.PI) / 180;
+    const cos = Math.abs(Math.cos(angle));
+    const sin = Math.abs(Math.sin(angle));
+    // Bounding box of the turned rectangle, then the largest scale that still
+    // fits it back inside the board. Exactly 1 at 0°, so a round trip is free.
+    const fit = Math.min(
+      1,
+      width / (width * cos + height * sin),
+      height / (width * sin + height * cos),
+    );
+
+    const context = this.context();
+    context.save();
+    context.globalCompositeOperation = "source-over";
+    context.clearRect(0, 0, width, height);
+    context.setTransform(1, 0, 0, 1, width / 2, height / 2);
+    context.rotate(angle);
+    context.scale(fit, fit);
+    context.drawImage(base, -width / 2, -height / 2);
+    context.restore();
+
+    this.commit();
+  }
+
+  /**
+   * Close any rotate session and put the slider back to 0.
+   *
+   * Called wherever the pixels change by other means -- a stroke, undo, a
+   * reload -- because the snapshot the slider was working from no longer
+   * describes what is on the board.
+   */
+  private endRotate(): void {
+    this.rotateBase = undefined;
+    this.rotation = 0;
+    if (this.rotationInput) this.rotationInput.value = "0";
+    if (this.rotationReadout) this.rotationReadout.textContent = "0°";
+  }
+
+  /** A copy of the board, as a canvas that can be drawn through a transform. */
+  private snapshot(): HTMLCanvasElement {
+    const copy = document.createElement("canvas");
+    copy.width = this.paint.width;
+    copy.height = this.paint.height;
+    copy.getContext("2d")?.drawImage(this.paint, 0, 0);
+    return copy;
   }
 
   /** Flood the piece's outline with its current colour, as a base to paint on. */
@@ -741,6 +843,7 @@ export class PaintBoard {
     const piece = this.host.piece();
     if (!piece) return;
 
+    this.endRotate();
     this.pushHistory();
     const path = this.outlinePath(piece, this.paint.width, this.paint.height);
     if (path.length < 3) {
@@ -836,6 +939,7 @@ export class PaintBoard {
   }
 
   private undo(): void {
+    this.endRotate();
     const previous = this.history.pop();
     if (!previous) {
       this.say("没有可撤回的步骤");
@@ -846,6 +950,7 @@ export class PaintBoard {
   }
 
   private clear(): void {
+    this.endRotate();
     this.pushHistory();
     this.context().clearRect(0, 0, this.paint.width, this.paint.height);
     this.commit();

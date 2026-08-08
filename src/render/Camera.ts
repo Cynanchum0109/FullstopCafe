@@ -4,6 +4,13 @@ import * as THREE from "three";
 const ELEVATION = THREE.MathUtils.degToRad(34);
 /** Azimuth of the room-wide view, in radians. */
 const HOME_AZIMUTH = Math.PI / 4;
+/**
+ * Head-on view of the room: standing in front of the back wall, dead level.
+ * Nothing is foreshortened here, which is what you want when judging a
+ * character's proportions rather than playing.
+ */
+const FRONT_AZIMUTH = 0;
+const FRONT_ELEVATION = 0;
 /** Distance from the orbit target. Orthographic, so this only affects clipping. */
 const ORBIT_RADIUS = 30;
 /** Half-height of the orthographic frustum at zoom 1, in world units. */
@@ -124,6 +131,24 @@ export class IsoCamera {
       elevation,
       0,
       Math.PI / 2 - 0.01,
+    );
+  }
+
+  /** Swing round to the head-on, level view. */
+  setFrontView(): void {
+    this.setOrientation(FRONT_AZIMUTH, FRONT_ELEVATION);
+  }
+
+  /**
+   * True when the view is aimed head-on.
+   *
+   * Reads the desired angle rather than a flag of its own, so a UI toggle stays
+   * honest when something else -- the rig tuner -- moves the camera.
+   */
+  get isFrontView(): boolean {
+    return (
+      this.desiredAzimuth === FRONT_AZIMUTH &&
+      this.desiredElevation === FRONT_ELEVATION
     );
   }
 

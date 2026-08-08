@@ -62,6 +62,13 @@ const furnitureButton = hud.addButton("隐藏家具", () => {
   furnitureButton.textContent = furniture.visible ? "隐藏家具" : "显示家具";
 });
 
+// Head-on and level, for judging proportions without the isometric skew.
+const viewButton = hud.addButton("正面视角", () => {
+  if (camera.isFrontView) camera.clearOrientation();
+  else camera.setFrontView();
+  viewButton.textContent = camera.isFrontView ? "正常视角" : "正面视角";
+});
+
 // --- Temporary phase-1 driver -------------------------------------------
 // Manual control exists only to validate the walk cycle and camera feel. The
 // utility AI replaces it in phase 2 and this block goes away.

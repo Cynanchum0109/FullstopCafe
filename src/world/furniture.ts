@@ -48,7 +48,8 @@ export class Furniture {
     this.buildGunSafe(ROOM_MIN_X + 0.45, -1.7);
     this.buildWeaponBench(ROOM_MIN_X + 0.55, -0.35);
 
-    // --- Lounge: Heath's nap zone. Rug stays under Office; sofa sits near. --
+    // --- Lounge: Heath's nap zone. ----------------------------------------
+    this.buildRug(1.0, 1.0);
     this.buildSofa(1.35, 1.55);
     this.buildCoffeeTable(1.35, 0.85);
 
@@ -62,6 +63,18 @@ export class Furniture {
   // -----------------------------------------------------------------------
   // Builders
   // -----------------------------------------------------------------------
+
+  /**
+   * The lounge rug. Dressing rather than architecture, so it lives here and
+   * disappears with the rest of the set instead of staying behind on the floor.
+   */
+  private buildRug(x: number, z: number): void {
+    const root = new THREE.Group();
+    root.name = "rug";
+    root.add(boxAt(3.2, 0.04, 2.3, palette.rug, x, 0.02, z, { castShadow: false }));
+    root.add(boxAt(2.8, 0.05, 1.9, palette.rugTrim, x, 0.03, z, { castShadow: false }));
+    this.group.add(root);
+  }
 
   private buildBossDesk(x: number, z: number): void {
     const id = "boss-desk";

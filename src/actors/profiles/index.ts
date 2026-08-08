@@ -25,7 +25,8 @@ function face(options: { eyeWidth?: number; eyeLength?: number; blush?: boolean 
     ...pair({
       ...DEFAULT_PIECE,
       shape: "disc",
-      color: "eye",
+      color: palette.suitBlack,
+      note: "眼睛",
       azimuth: 0.34,
       elevation: 0.165,
       lift: 0.004,
@@ -39,7 +40,8 @@ function face(options: { eyeWidth?: number; eyeLength?: number; blush?: boolean 
       ...pair({
         ...DEFAULT_PIECE,
         shape: "disc",
-        color: "skinDark",
+        color: palette.skinDark,
+        note: "腮红",
         azimuth: 0.74,
         elevation: -0.2,
         lift: 0.003,
@@ -75,6 +77,7 @@ export const profiles: CharacterProfile[] = [
           lengthBias: 0.65,
           skew: -0.05,
           width: 0.13,
+          color: palette.heathHair,
         }),
         // Light side: short and tucked.
         ...fringe({
@@ -84,10 +87,13 @@ export const profiles: CharacterProfile[] = [
           length: 0.13,
           skew: 0.03,
           width: 0.12,
+          color: palette.heathHair,
         }),
         ...pair({
           ...DEFAULT_PIECE,
           shape: "lock",
+          color: palette.heathHair,
+          note: "鬓发",
           azimuth: 1.45,
           elevation: 0.16,
           width: 0.1,
@@ -130,6 +136,7 @@ export const profiles: CharacterProfile[] = [
           lengthBias: 0.55,
           skew: 0.04,
           width: 0.13,
+          color: palette.hongluHair,
         }),
         // ...and almost nothing on the other side.
         ...fringe({
@@ -138,11 +145,14 @@ export const profiles: CharacterProfile[] = [
           count: 2,
           length: 0.11,
           width: 0.11,
+          color: palette.hongluHair,
         }),
         // Long lock in front of the ear, on the covered side only.
         {
           ...DEFAULT_PIECE,
           shape: "lock",
+          color: palette.hongluHair,
+          note: "长鬓发",
           azimuth: -1.5,
           elevation: 0.1,
           width: 0.1,
@@ -152,6 +162,8 @@ export const profiles: CharacterProfile[] = [
         {
           ...DEFAULT_PIECE,
           shape: "lock",
+          color: palette.hongluHair,
+          note: "短鬓发",
           azimuth: 1.5,
           elevation: 0.12,
           width: 0.09,
@@ -194,10 +206,13 @@ export const profiles: CharacterProfile[] = [
           length: 0.19,
           shape: "spike",
           width: 0.11,
+          color: palette.sinclairHair,
         }),
         ...pair({
           ...DEFAULT_PIECE,
           shape: "lock",
+          color: palette.sinclairHair,
+          note: "鬓发",
           azimuth: 1.5,
           elevation: 0.05,
           width: 0.11,

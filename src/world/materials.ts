@@ -76,6 +76,11 @@ export function cardMaterial(texture: THREE.Texture): THREE.MeshLambertMaterial 
     transparent: false,
     side: THREE.DoubleSide,
     flatShading: true,
+    // The textured mesh sits exactly on top of the base-coloured one. Without a
+    // depth nudge the two z-fight and the surface speckles.
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
   });
   cardCache.set(texture.uuid, material);
   return material;

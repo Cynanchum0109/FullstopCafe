@@ -2,7 +2,6 @@ import type { Actor } from "../actors/Actor";
 import { events } from "../core/Events";
 import type { RigSpec } from "../actors/Rig";
 import {
-  PIECE_COLORS,
   PIECE_CONTROLS,
   PIECE_SHAPES,
   RIG_COLOR_CONTROLS,
@@ -14,7 +13,6 @@ import { bundleFilename, download, exportBundle, importBundle } from "../actors/
 import {
   DEFAULT_PIECE,
   mirrored,
-  type PieceColor,
   type PieceShape,
   type SurfacePiece,
 } from "../actors/SurfacePiece";
@@ -121,11 +119,19 @@ export class RigTuner {
 
     container.appendChild(this.root);
 
+    // A tappable toggle as well as the backtick key: phones have no keyboard,
+    // and the tuner is the only way to see anything but the default look.
+    const toggle = document.createElement("button");
+    toggle.className = "tuner-toggle";
+    toggle.textContent = "⚙";
+    toggle.title = "模型调整器（` 键）";
+    toggle.addEventListener("click", () => this.toggle());
+    container.appendChild(toggle);
+
     // One instance for the whole session, living outside the sidebar so it can
     // be dragged and resized freely.
     this.paint = new PaintBoard({
       piece: () => this.piece(),
-      spec: () => this.spec(),
       rebuild: () => {
         this.rebuild();
         this.refreshPieceList?.();
@@ -304,9 +310,8 @@ export class RigTuner {
     section.appendChild(
       this.pieceDropdown("shape", "形状", PIECE_SHAPES, refreshList),
     );
-    section.appendChild(
-      this.pieceDropdown("color", "颜色", PIECE_COLORS, refreshList),
-    );
+    section.appendChild(this.pieceColorRow());
+    section.appendChild(this.pieceHiddenRow(refreshList));
     section.appendChild(this.noteInput(refreshList));
     section.appendChild(this.textureDropdown());
 
@@ -324,6 +329,68 @@ export class RigTuner {
     }
 
     return section;
+  }
+
+  /**
+   * The piece's own colour. One swatch, not a slot picked from the character
+   * palette: a piece is painted in this colour and a texture layers over it,
+   * so there is only ever one base colour to choose.
+   */
+  private pieceColorRow(): HTMLElement {
+    const row = document.createElement("label");
+    row.className = "tuner__row";
+
+    const name = document.createElement("span");
+    name.className = "tuner__label";
+    name.textContent = "底色";
+
+    const input = document.createElement("input");
+    input.type = "color";
+
+    input.addEventListener("input", () => {
+      const piece = this.piece();
+      if (!piece) return;
+      piece.color = Number.parseInt(input.value.slice(1), 16);
+      this.rebuild();
+    });
+
+    row.append(name, input);
+    this.inputs.push(() => {
+      const piece = this.piece();
+      input.disabled = !piece;
+      input.value = toHex(piece?.color ?? 0);
+    });
+    return row;
+  }
+
+  /** Hide a piece without deleting it: shape and selection survive. */
+  private pieceHiddenRow(onChange: () => void): HTMLElement {
+    const row = document.createElement("label");
+    row.className = "tuner__row";
+
+    const name = document.createElement("span");
+    name.className = "tuner__label";
+    name.textContent = "完全透明";
+
+    const input = document.createElement("input");
+    input.type = "checkbox";
+
+    input.addEventListener("change", () => {
+      const piece = this.piece();
+      if (!piece) return;
+      if (input.checked) piece.hidden = true;
+      else delete piece.hidden;
+      onChange();
+      this.rebuild();
+    });
+
+    row.append(name, input);
+    this.inputs.push(() => {
+      const piece = this.piece();
+      input.disabled = !piece;
+      input.checked = Boolean(piece?.hidden);
+    });
+    return row;
   }
 
   /** Free-text label for a piece. A head of twenty "发绺·头发·82°" is unusable. */
@@ -476,6 +543,9 @@ export class RigTuner {
       piece[control.key] = Number(input.value);
       value.textContent = format(piece[control.key]);
       this.rebuild();
+      // Width, length and pad change the card rectangle, and the board takes
+      // its proportions from that.
+      this.paint?.resync();
     });
 
     row.append(name, input, value);
@@ -493,7 +563,7 @@ export class RigTuner {
   }
 
   private pieceDropdown(
-    key: "shape" | "color",
+    key: "shape",
     label: string,
     options: ReadonlyArray<{ value: string; label: string }>,
     onChange: () => void,
@@ -517,10 +587,10 @@ export class RigTuner {
     select.addEventListener("change", () => {
       const piece = this.piece();
       if (!piece) return;
-      if (key === "shape") piece.shape = select.value as PieceShape;
-      else piece.color = select.value as PieceColor;
+      piece[key] = select.value as PieceShape;
       onChange();
       this.rebuild();
+      this.paint?.resync();
     });
 
     row.append(name, select);
@@ -724,14 +794,12 @@ function copySpec(spec: RigSpec): RigSpec {
 /** Label for a piece in the list: its note if it has one, else what it is. */
 function labelFor(piece: SurfacePiece): string {
   const degrees = Math.round((piece.azimuth * 180) / Math.PI);
-  if (piece.note) return `${piece.note} · ${degrees}°`;
+  const marks = `${piece.texture ? "🖌 " : ""}${piece.hidden ? "👻 " : ""}`;
+  if (piece.note) return `${marks}${piece.note} · ${degrees}°`;
 
   const shape =
     PIECE_SHAPES.find((s) => s.value === piece.shape)?.label ?? piece.shape;
-  const color =
-    PIECE_COLORS.find((c) => c.value === piece.color)?.label ?? piece.color;
-  const mark = piece.texture ? "🖌 " : "";
-  return `${mark}${shape} · ${color} · ${degrees}°`;
+  return `${marks}${shape} · ${degrees}°`;
 }
 
 function format(value: number): string {

@@ -64,6 +64,26 @@ body {
 
 /* --- Rig tuner ------------------------------------------------------- */
 
+.tuner-toggle {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(16, 16, 26, 0.85);
+  color: #e8e8f0;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+
+.tuner-toggle:hover {
+  background: rgba(40, 40, 56, 0.9);
+}
+
 /* `display: flex` below would otherwise beat the [hidden] attribute. */
 .panel--tuner[hidden] {
   display: none;
@@ -262,6 +282,9 @@ body {
 
 .paint__stack {
   position: relative;
+  /* aspect-ratio is set from the piece's proportions at runtime. Deliberately
+     uncapped: clamping the height would stop the box matching the aspect, and
+     the drawing would be stretched again. The panel body scrolls instead. */
   width: 100%;
   aspect-ratio: 1;
   margin: 0 auto 6px;
@@ -394,6 +417,32 @@ body {
   padding: 0 12px 8px;
   font-size: 11px;
   opacity: 0.6;
+}
+
+/* Phones: let the two panels use the width they need. Nothing more elaborate
+   -- the tuner is a development tool that happens to need to open on a phone. */
+@media (max-width: 720px) {
+  .panel--tuner {
+    left: 8px;
+    right: 8px;
+    top: 8px;
+    bottom: 64px;
+    width: auto;
+  }
+
+  .paint-panel {
+    left: 8px;
+    top: 8px;
+    width: calc(100vw - 16px);
+    max-width: none;
+    height: 70vh;
+  }
+
+  .tuner-toggle {
+    width: 52px;
+    height: 52px;
+    font-size: 24px;
+  }
 }
 
 .hud__hint {

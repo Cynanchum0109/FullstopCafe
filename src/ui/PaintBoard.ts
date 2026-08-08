@@ -1,16 +1,11 @@
-import {
-  cardBounds,
-  outlinePoints,
-  pieceColor,
-  type SurfacePiece,
-} from "../actors/SurfacePiece";
-import type { RigSpec } from "../actors/Rig";
+import { cardBounds, outlinePoints, type SurfacePiece } from "../actors/SurfacePiece";
 import {
   PAINT_RESOLUTION,
   createPainted,
   exportPng,
   getCanvas,
   markDirty,
+  paintSize,
   savePainted,
 } from "../actors/textures";
 import { traceOutline } from "../actors/trace";
@@ -19,11 +14,12 @@ import { traceOutline } from "../actors/trace";
 const HISTORY_LIMIT = 40;
 
 /**
- * Internal resolution of the guide overlay. Fixed and generous: the panel is
- * resizable, and the overlay is stretched by CSS rather than re-rasterised, so
- * this only needs to be high enough that the outline never looks chunky.
+ * Pixels along the guide overlay's longer side. Generous and independent of the
+ * paint resolution: the panel is resizable and the overlay is stretched by CSS
+ * rather than re-rasterised, so this only needs to be high enough that the
+ * outline never looks chunky.
  */
-const GUIDE_RES = 512;
+const GUIDE_LONG_SIDE = 512;
 
 const SWATCHES = [
   "#ffffff",
@@ -52,8 +48,6 @@ const TOOLS: Array<{ value: Tool; label: string }> = [
 export interface PaintBoardHost {
   /** The piece being edited, or undefined when nothing is selected. */
   piece(): SurfacePiece | undefined;
-  /** The spec that piece belongs to, for resolving its colour slot. */
-  spec(): RigSpec;
   /** Rebuild the character, e.g. after assigning a texture for the first time. */
   rebuild(): void;
   /** Show a transient message in the tuner's status line. */
@@ -112,12 +106,8 @@ export class PaintBoard {
 
     this.paint = document.createElement("canvas");
     this.paint.className = "paint__canvas";
-    this.paint.width = PAINT_RESOLUTION;
-    this.paint.height = PAINT_RESOLUTION;
     this.guide = document.createElement("canvas");
     this.guide.className = "paint__guide";
-    this.guide.width = GUIDE_RES;
-    this.guide.height = GUIDE_RES;
     this.stack.append(this.paint, this.guide);
     body.appendChild(this.stack);
 
@@ -133,14 +123,82 @@ export class PaintBoard {
   /** Called when the selection or the piece's shape changes. */
   refresh(): void {
     const piece = this.host.piece();
+    this.resizeToPiece();
+
     const source = piece?.texture ? getCanvas(piece.texture) : undefined;
     const context = this.context();
-
-    context.clearRect(0, 0, PAINT_RESOLUTION, PAINT_RESOLUTION);
-    if (source) context.drawImage(source, 0, 0);
+    context.clearRect(0, 0, this.paint.width, this.paint.height);
+    if (source) {
+      // Scaled, not blitted: resizing the piece changes the board's aspect, and
+      // an existing painting should follow the shape rather than be cropped.
+      context.drawImage(source, 0, 0, this.paint.width, this.paint.height);
+    }
 
     this.history = [];
     this.drawGuide();
+  }
+
+  /**
+   * Follow a live change to the piece's proportions without disturbing the
+   * painting or the undo history.
+   *
+   * Called while width, length and pad sliders are being dragged, so it has to
+   * be cheap and non-destructive -- `refresh` would reload from the stored
+   * texture and drop undo steps on every tick.
+   */
+  resync(): void {
+    if (this.root.hidden) return;
+
+    const piece = this.host.piece();
+    const wanted = paintSize(piece ? aspectOf(piece) : 1);
+    if (wanted.width !== this.paint.width || wanted.height !== this.paint.height) {
+      // Resizing a canvas clears it, so keep a copy and scale it back in.
+      const backup = document.createElement("canvas");
+      backup.width = this.paint.width;
+      backup.height = this.paint.height;
+      backup.getContext("2d")?.drawImage(this.paint, 0, 0);
+
+      this.resizeToPiece();
+      this.context().drawImage(backup, 0, 0, this.paint.width, this.paint.height);
+      this.commit();
+    } else {
+      this.resizeToPiece();
+    }
+
+    this.drawGuide();
+  }
+
+  /**
+   * Match the board to the piece's proportions.
+   *
+   * Both the pixel grid and the on-screen box follow the card rectangle, so
+   * texels stay square and a circle drawn here is a circle on the model.
+   */
+  private resizeToPiece(): void {
+    const piece = this.host.piece();
+    const aspect = piece ? aspectOf(piece) : 1;
+
+    const size = paintSize(aspect);
+    if (this.paint.width !== size.width || this.paint.height !== size.height) {
+      this.paint.width = size.width;
+      this.paint.height = size.height;
+    }
+
+    const guide = guideSize(aspect);
+    if (this.guide.width !== guide.width || this.guide.height !== guide.height) {
+      this.guide.width = guide.width;
+      this.guide.height = guide.height;
+    }
+
+    // Fit the box inside the panel while keeping the aspect exactly. Letting
+    // CSS clamp the height instead would break the aspect, and the drawing
+    // would be stretched again -- the very thing this is here to prevent.
+    const available = this.root.clientWidth - 20 || 300;
+    const maxHeight = Math.max(160, window.innerHeight * 0.5);
+    const width = Math.min(available, maxHeight * aspect);
+    this.stack.style.width = `${Math.round(width)}px`;
+    this.stack.style.height = `${Math.round(width / aspect)}px`;
+    this.stack.style.aspectRatio = "auto";
   }
 
   private context(): CanvasRenderingContext2D {
@@ -355,12 +413,13 @@ export class PaintBoard {
   private drawGuide(): void {
     const context = this.guide.getContext("2d");
     if (!context) return;
-    context.clearRect(0, 0, GUIDE_RES, GUIDE_RES);
+    const { width, height } = this.guide;
+    context.clearRect(0, 0, width, height);
 
     const piece = this.host.piece();
     if (!piece) return;
 
-    const path = this.outlinePath(piece, GUIDE_RES);
+    const path = this.outlinePath(piece, width, height);
     if (path.length > 1) {
       context.beginPath();
       path.forEach(([x, y], index) => {
@@ -375,8 +434,8 @@ export class PaintBoard {
 
     if (this.mirror) {
       context.beginPath();
-      context.moveTo(GUIDE_RES / 2, 0);
-      context.lineTo(GUIDE_RES / 2, GUIDE_RES);
+      context.moveTo(width / 2, 0);
+      context.lineTo(width / 2, height);
       context.strokeStyle = "rgba(255, 255, 255, 0.35)";
       context.setLineDash([8, 8]);
       context.lineWidth = 2;
@@ -386,7 +445,11 @@ export class PaintBoard {
   }
 
   /** The outline in canvas pixels, at whatever resolution is asked for. */
-  private outlinePath(piece: SurfacePiece, size: number): Array<[number, number]> {
+  private outlinePath(
+    piece: SurfacePiece,
+    width: number,
+    height: number,
+  ): Array<[number, number]> {
     const bounds = cardBounds(piece);
     const spanX = bounds.maxX - bounds.minX;
     const spanY = bounds.maxY - bounds.minY;
@@ -394,8 +457,8 @@ export class PaintBoard {
 
     // Piece space has +Y up; canvas has +Y down.
     return outlinePoints(piece).map((point) => [
-      ((point.x - bounds.minX) / spanX) * size,
-      ((bounds.maxY - point.y) / spanY) * size,
+      ((point.x - bounds.minX) / spanX) * width,
+      ((bounds.maxY - point.y) / spanY) * height,
     ]);
   }
 
@@ -405,8 +468,8 @@ export class PaintBoard {
     const toPixel = (event: PointerEvent): [number, number] => {
       const rect = this.paint.getBoundingClientRect();
       return [
-        ((event.clientX - rect.left) / rect.width) * PAINT_RESOLUTION,
-        ((event.clientY - rect.top) / rect.height) * PAINT_RESOLUTION,
+        ((event.clientX - rect.left) / rect.width) * this.paint.width,
+        ((event.clientY - rect.top) / rect.height) * this.paint.height,
       ];
     };
 
@@ -430,8 +493,8 @@ export class PaintBoard {
       this.preview = this.context().getImageData(
         0,
         0,
-        PAINT_RESOLUTION,
-        PAINT_RESOLUTION,
+        this.paint.width,
+        this.paint.height,
       );
       if (this.tool === "brush" || this.tool === "eraser") {
         this.strokeSegment(this.startX, this.startY, this.startX, this.startY);
@@ -485,7 +548,7 @@ export class PaintBoard {
 
     if (!this.mirror) return;
     context.save();
-    context.setTransform(-1, 0, 0, 1, PAINT_RESOLUTION, 0);
+    context.setTransform(-1, 0, 0, 1, this.paint.width, 0);
     draw(context);
     context.restore();
   }
@@ -546,7 +609,9 @@ export class PaintBoard {
    */
   private floodFill(px: number, py: number): void {
     const context = this.context();
-    const image = context.getImageData(0, 0, PAINT_RESOLUTION, PAINT_RESOLUTION);
+    const width = this.paint.width;
+    const height = this.paint.height;
+    const image = context.getImageData(0, 0, width, height);
     const { data } = image;
 
     const startX = Math.floor(px);
@@ -554,13 +619,13 @@ export class PaintBoard {
     if (
       startX < 0 ||
       startY < 0 ||
-      startX >= PAINT_RESOLUTION ||
-      startY >= PAINT_RESOLUTION
+      startX >= width ||
+      startY >= height
     ) {
       return;
     }
 
-    const at = (x: number, y: number) => (y * PAINT_RESOLUTION + x) * 4;
+    const at = (x: number, y: number) => (y * width + x) * 4;
     const target = at(startX, startY);
     const seed = [
       data[target] ?? 0,
@@ -590,7 +655,7 @@ export class PaintBoard {
       const next = stack.pop();
       if (!next) break;
       const [x, y] = next;
-      if (x < 0 || y < 0 || x >= PAINT_RESOLUTION || y >= PAINT_RESOLUTION) continue;
+      if (x < 0 || y < 0 || x >= width || y >= height) continue;
       const index = at(x, y);
       if (!matches(index)) continue;
 
@@ -611,7 +676,7 @@ export class PaintBoard {
     if (!piece) return;
 
     this.pushHistory();
-    const path = this.outlinePath(piece, PAINT_RESOLUTION);
+    const path = this.outlinePath(piece, this.paint.width, this.paint.height);
     if (path.length < 3) {
       this.say("这个部件没有可用的轮廓");
       return;
@@ -620,10 +685,7 @@ export class PaintBoard {
     const context = this.context();
     context.save();
     context.globalCompositeOperation = "source-over";
-    context.fillStyle =
-      piece.color === "none"
-        ? this.color
-        : `#${pieceColor(piece.color, this.host.spec()).toString(16).padStart(6, "0")}`;
+    context.fillStyle = `#${piece.color.toString(16).padStart(6, "0")}`;
     context.beginPath();
     path.forEach(([x, y], index) => {
       if (index === 0) context.moveTo(x, y);
@@ -646,7 +708,9 @@ export class PaintBoard {
     const context = target.getContext("2d");
     if (!context) return;
     context.clearRect(0, 0, target.width, target.height);
-    context.drawImage(this.paint, 0, 0);
+    // Scaled: a texture created before the piece was resized has the old
+    // dimensions, and cropping it would silently lose part of the painting.
+    context.drawImage(this.paint, 0, 0, target.width, target.height);
     markDirty(piece.texture);
   }
 
@@ -681,7 +745,7 @@ export class PaintBoard {
     const piece = this.host.piece();
     if (!piece) return;
     if (!piece.texture) {
-      piece.texture = createPainted();
+      piece.texture = createPainted(this.paint.width, this.paint.height);
       this.host.rebuild();
     }
     this.commit();
@@ -700,7 +764,7 @@ export class PaintBoard {
 
   private pushHistory(): void {
     this.history.push(
-      this.context().getImageData(0, 0, PAINT_RESOLUTION, PAINT_RESOLUTION),
+      this.context().getImageData(0, 0, this.paint.width, this.paint.height),
     );
     if (this.history.length > HISTORY_LIMIT) this.history.shift();
   }
@@ -717,13 +781,36 @@ export class PaintBoard {
 
   private clear(): void {
     this.pushHistory();
-    this.context().clearRect(0, 0, PAINT_RESOLUTION, PAINT_RESOLUTION);
+    this.context().clearRect(0, 0, this.paint.width, this.paint.height);
     this.commit();
   }
 
   private say(message: string): void {
     this.host.say(message);
   }
+}
+
+/** Width over height of a piece's card rectangle. */
+function aspectOf(piece: SurfacePiece): number {
+  const bounds = cardBounds(piece);
+  const spanX = bounds.maxX - bounds.minX;
+  const spanY = bounds.maxY - bounds.minY;
+  if (spanX <= 0 || spanY <= 0) return 1;
+  return spanX / spanY;
+}
+
+/** Guide overlay size for an aspect, with the longer side at GUIDE_LONG_SIDE. */
+function guideSize(aspect: number): { width: number; height: number } {
+  if (aspect >= 1) {
+    return {
+      width: GUIDE_LONG_SIDE,
+      height: Math.max(64, Math.round(GUIDE_LONG_SIDE / aspect)),
+    };
+  }
+  return {
+    width: Math.max(64, Math.round(GUIDE_LONG_SIDE * aspect)),
+    height: GUIDE_LONG_SIDE,
+  };
 }
 
 function hexToRgb(hex: string): [number, number, number] {

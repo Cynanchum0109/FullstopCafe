@@ -173,15 +173,3 @@ export const PIECE_SHAPES = [
   { value: "custom", label: "自定义（画布追踪）" },
 ] as const;
 
-export const PIECE_COLORS = [
-  { value: "none", label: "完全透明" },
-  { value: "hair", label: "头发" },
-  { value: "hairShade", label: "暗部" },
-  { value: "hairTie", label: "发圈" },
-  { value: "skin", label: "皮肤" },
-  { value: "skinDark", label: "腮红" },
-  { value: "eye", label: "眼睛" },
-  { value: "accent", label: "领口" },
-  { value: "body", label: "身体" },
-  { value: "hem", label: "裙边" },
-] as const;

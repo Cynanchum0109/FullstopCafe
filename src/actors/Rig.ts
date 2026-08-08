@@ -12,7 +12,6 @@ import {
 import { getTexture } from "./textures";
 import {
   buildPiece,
-  pieceColor,
   fringe,
   pair,
   DEFAULT_PIECE,
@@ -142,7 +141,8 @@ export function defaultPieces(): SurfacePiece[] {
     ...pair({
       ...DEFAULT_PIECE,
       shape: "disc",
-      color: "eye",
+      color: palette.suitBlack,
+      note: "眼睛",
       azimuth: 0.34,
       elevation: 0.165,
       lift: 0.004,
@@ -154,7 +154,8 @@ export function defaultPieces(): SurfacePiece[] {
     ...pair({
       ...DEFAULT_PIECE,
       shape: "disc",
-      color: "skinDark",
+      color: palette.skinDark,
+      note: "腮红",
       azimuth: 0.72,
       elevation: -0.17,
       lift: 0.003,
@@ -167,6 +168,7 @@ export function defaultPieces(): SurfacePiece[] {
     ...pair({
       ...DEFAULT_PIECE,
       shape: "lock",
+      note: "鬓发",
       azimuth: 1.42,
       elevation: 0.18,
       width: 0.1,
@@ -332,24 +334,28 @@ export class Rig {
     pieceRoot.position.y = centre;
     head.add(pieceRoot);
     s.pieces.forEach((piece, index) => {
-      const texture = piece.texture ? getTexture(piece.texture) : undefined;
-      // A piece can be invisible and still be selectable and editable, which is
-      // how you scaffold a shape you only ever intend to paint.
-      // An invisible material rather than `visible = false`, so the selection
-      // outline -- which hangs off the mesh -- still draws.
-      const material = texture
-        ? cardMaterial(texture)
-        : piece.color === "none"
-          ? invisibleMaterial()
-          : flatMaterial(pieceColor(piece.color, s));
-      const node = buildPiece(piece, s.headRadius, material);
+      // The base coat is the piece's own colour, always. An invisible material
+      // rather than `visible = false`, so the selection outline -- which hangs
+      // off the mesh -- still draws for a hidden piece.
+      const base = piece.hidden ? invisibleMaterial() : flatMaterial(piece.color);
+      const node = buildPiece(piece, s.headRadius, base);
 
+      // A texture is a second, coincident mesh layered over the base rather
+      // than a replacement for it. `alphaTest` discards its unpainted pixels
+      // and the base coat shows through there, which is what stops applying a
+      // half-finished painting from hollowing the piece out.
+      const texture = piece.texture ? getTexture(piece.texture) : undefined;
       if (texture) {
+        const faces: THREE.Mesh[] = [];
         node.traverse((child) => {
-          if (child instanceof THREE.Mesh) {
-            child.customDepthMaterial = cardDepthMaterial(texture);
-          }
+          if (child instanceof THREE.Mesh) faces.push(child);
         });
+        for (const face of faces) {
+          const overlay = new THREE.Mesh(face.geometry, cardMaterial(texture));
+          overlay.castShadow = true;
+          overlay.customDepthMaterial = cardDepthMaterial(texture);
+          face.add(overlay);
+        }
       }
 
       if (index === this.highlight) markHighlighted(node);

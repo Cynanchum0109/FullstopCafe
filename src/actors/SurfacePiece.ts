@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import type { RigSpec } from "./Rig";
+import { palette } from "../world/palette";
 
 /**
  * Outline presets. Each is a small 2D polygon that gets extruded to a thin
@@ -19,9 +20,11 @@ export type PieceShape =
   | "round"
   | "custom";
 
-/** Which colour from the rig spec a piece paints itself with. */
-export type PieceColor =
-  /** Draws nothing. The piece keeps its shape and stays selectable. */
+/**
+ * Legacy colour slots, kept only to migrate bundles written before pieces
+ * carried their own colour.
+ */
+export type LegacyPieceColor =
   | "none"
   | "hair"
   | "hairShade"
@@ -35,7 +38,13 @@ export type PieceColor =
 
 export interface SurfacePiece {
   shape: PieceShape;
-  color: PieceColor;
+  /**
+   * The piece's own colour, as a hex number. It is the base the whole shape is
+   * painted in; a texture layers on top of it rather than replacing it.
+   */
+  color: number;
+  /** Draws nothing. The piece keeps its shape and stays selectable. */
+  hidden?: boolean;
   /** Optional label, so a head full of pieces stays navigable. */
   note?: string;
 
@@ -95,7 +104,7 @@ export interface SurfacePiece {
 
 export const DEFAULT_PIECE: SurfacePiece = {
   shape: "wedge",
-  color: "hair",
+  color: palette.heathHair,
   azimuth: 0,
   elevation: 0.3,
   lift: 0,
@@ -250,21 +259,24 @@ export function cardBounds(piece: SurfacePiece): {
 } {
   const pad = Math.max(piece.pad, 1);
 
-  // One formula for every shape, derived from width and length rather than from
-  // the outline itself. Deriving it per shape meant a traced path -- which is
-  // stored normalised against these bounds -- shifted and rescaled the moment
-  // the shape switched to `custom`, and it would feed back on itself once it
-  // had.
+  // Derived from width and length only, never from the outline itself.
+  // Deriving it per shape meant a traced path -- which is stored normalised
+  // against these bounds -- shifted and rescaled the moment the shape switched
+  // to `custom`, and then fed back on itself on every rebuild after that.
   //
-  // Square, because the paint board is square: equal world units per pixel on
-  // both axes, so nothing drawn there comes out stretched.
-  const half = (Math.max(piece.width, piece.length) / 2) * pad;
+  // The rectangle follows the piece's own proportions rather than being
+  // squared off. Squaring it meant a long thin piece occupied a narrow strip
+  // of the canvas: most of what you painted fell where there was no geometry
+  // and was discarded, and the sliver that survived read as a smear. The paint
+  // board takes its aspect from here, so a circle drawn on it stays a circle.
+  const halfWidth = (piece.width / 2) * pad;
+  const halfHeight = (piece.length / 2) * pad;
   const centreY = -piece.length / 2;
   return {
-    minX: -half,
-    maxX: half,
-    minY: centreY - half,
-    maxY: centreY + half,
+    minX: -halfWidth,
+    maxX: halfWidth,
+    minY: centreY - halfHeight,
+    maxY: centreY + halfHeight,
   };
 }
 
@@ -273,29 +285,39 @@ export function outlinePoints(piece: SurfacePiece): THREE.Vector2[] {
   return outline(piece).getPoints(24);
 }
 
-/** Resolve a piece's colour slot against the character's palette. */
-export function pieceColor(slot: PieceColor, spec: RigSpec): number {
+/**
+ * Resolve an old colour slot against a character's palette.
+ *
+ * Only used when loading a bundle written before pieces carried their own
+ * colour; new pieces store a hex value directly.
+ */
+export function resolveLegacyColor(
+  slot: LegacyPieceColor,
+  spec: RigSpec,
+): { color: number; hidden: boolean } {
   switch (slot) {
     case "none":
-      return 0x000000;
+      return { color: spec.hair, hidden: true };
     case "hair":
-      return spec.hair;
+      return { color: spec.hair, hidden: false };
     case "hairShade":
-      return spec.hairShade;
+      return { color: spec.hairShade, hidden: false };
     case "hairTie":
-      return spec.hairTie;
+      return { color: spec.hairTie, hidden: false };
     case "skin":
-      return spec.skin;
+      return { color: spec.skin, hidden: false };
     case "skinDark":
-      return spec.skinDark;
+      return { color: spec.skinDark, hidden: false };
     case "eye":
-      return spec.eye;
+      return { color: spec.eye, hidden: false };
     case "accent":
-      return spec.accent;
+      return { color: spec.accent, hidden: false };
     case "body":
-      return spec.body;
+      return { color: spec.body, hidden: false };
     case "hem":
-      return spec.hem;
+      return { color: spec.hem, hidden: false };
+    default:
+      return { color: spec.hair, hidden: false };
   }
 }
 
@@ -414,7 +436,7 @@ export function fringe(options: {
   skew?: number;
   elevation?: number;
   shape?: PieceShape;
-  color?: PieceColor;
+  color?: number;
 }): SurfacePiece[] {
   const {
     from,
@@ -429,7 +451,7 @@ export function fringe(options: {
     // sweeps straight past the eyes and down to the chin.
     elevation = 0.82,
     shape = "lock",
-    color = "hair",
+    color = palette.heathHair,
   } = options;
 
   const pieces: SurfacePiece[] = [];

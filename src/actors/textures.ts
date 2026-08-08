@@ -12,12 +12,35 @@ const STORAGE_KEY = "fsc.paintedTextures.v1";
 const STORAGE_VERSION = 1;
 
 /**
+ * Pixels along a texture's longer side. The shorter side is scaled to the
+ * piece's proportions so texels stay square.
+ *
  * Fixed and small. A head can carry twenty painted pieces and three characters
  * share the scene, so every texture is a GPU upload and a localStorage entry
- * that has to stay cheap. At the size these read on screen, 64 is plenty --
- * and a fixed value means the paint board never has to resample anything.
+ * that has to stay cheap. At the size these read on screen, 64 is plenty.
  */
 export const PAINT_RESOLUTION = 64;
+
+/** Never go below this on the short side, however thin the piece is. */
+const MIN_PAINT_SIDE = 12;
+
+/**
+ * Canvas size for a piece with the given aspect (width / height), with the
+ * longer side at `PAINT_RESOLUTION`.
+ */
+export function paintSize(aspect: number): { width: number; height: number } {
+  const safe = Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
+  if (safe >= 1) {
+    return {
+      width: PAINT_RESOLUTION,
+      height: Math.max(MIN_PAINT_SIDE, Math.round(PAINT_RESOLUTION / safe)),
+    };
+  }
+  return {
+    width: Math.max(MIN_PAINT_SIDE, Math.round(PAINT_RESOLUTION * safe)),
+    height: PAINT_RESOLUTION,
+  };
+}
 
 export interface TextureEntry {
   id: string;
@@ -93,12 +116,16 @@ export function markDirty(id: string): void {
   if (entry) entry.texture.needsUpdate = true;
 }
 
-/** Create a blank painted texture and return its id. */
-export function createPainted(id?: string): string {
+/** Create a blank painted texture at a given size and return its id. */
+export function createPainted(
+  width = PAINT_RESOLUTION,
+  height = PAINT_RESOLUTION,
+  id?: string,
+): string {
   const key = id ?? `paint:${Date.now().toString(36)}`;
   const canvas = document.createElement("canvas");
-  canvas.width = PAINT_RESOLUTION;
-  canvas.height = PAINT_RESOLUTION;
+  canvas.width = width;
+  canvas.height = height;
   registerCanvas(key, canvas);
   return key;
 }

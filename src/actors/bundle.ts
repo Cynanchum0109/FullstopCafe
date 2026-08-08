@@ -2,6 +2,11 @@ import { unzipSync, zipSync } from "fflate";
 import { DEFAULT_RIG_SPEC, type RigSpec } from "./Rig";
 import { RIG_COLOR_CONTROLS, TUNABLE_KEYS } from "./rigControls";
 import { clearPainted, paintedEntries, registerPng } from "./textures";
+import {
+  resolveLegacyColor,
+  type LegacyPieceColor,
+  type SurfacePiece,
+} from "./SurfacePiece";
 
 /**
  * Import and export of a complete editing session: every character's spec plus
@@ -94,10 +99,30 @@ export async function importBundle(file: File): Promise<LoadedBundle> {
   // written before a field existed does not produce an undefined in the rig.
   const characters: Record<string, RigSpec> = {};
   for (const [id, spec] of Object.entries(manifest.characters)) {
-    characters[id] = { ...DEFAULT_RIG_SPEC, ...spec };
+    const merged = { ...DEFAULT_RIG_SPEC, ...spec };
+    merged.pieces = merged.pieces.map((piece) => migratePiece(piece, merged));
+    characters[id] = merged;
   }
 
   return { characters, textureCount };
+}
+
+/**
+ * Bring a piece forward from the old colour-slot format.
+ *
+ * Pieces used to name a slot in the character palette ("hair", "skinDark",
+ * "none"); they now carry their own colour and a hidden flag. Bundles saved
+ * before that change still say `color: "hair"`, so resolve it once on load
+ * rather than teaching the rig two formats.
+ */
+function migratePiece(piece: SurfacePiece, spec: RigSpec): SurfacePiece {
+  if (typeof piece.color === "number") return piece;
+
+  const legacy = piece.color as unknown as LegacyPieceColor;
+  const resolved = resolveLegacyColor(legacy, spec);
+  const migrated: SurfacePiece = { ...piece, color: resolved.color };
+  if (resolved.hidden) migrated.hidden = true;
+  return migrated;
 }
 
 /** Trigger a download of a blob under a given filename. */
@@ -141,11 +166,14 @@ export function formatSpecBlock(spec: RigSpec): string {
   lines.push("  pieces: [");
   for (const piece of spec.pieces) {
     const fields = Object.entries(piece)
-      .map(([key, value]) =>
-        typeof value === "number"
+      .map(([key, value]) => {
+        if (key === "color" && typeof value === "number") {
+          return `color: ${toHexLiteral(value)}`;
+        }
+        return typeof value === "number"
           ? `${key}: ${round(value)}`
-          : `${key}: ${JSON.stringify(value)}`,
-      )
+          : `${key}: ${JSON.stringify(value)}`;
+      })
       .join(", ");
     lines.push(`    { ${fields} },`);
   }

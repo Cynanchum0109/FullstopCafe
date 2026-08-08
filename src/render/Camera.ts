@@ -12,12 +12,15 @@ const MAX_ZOOM = 2.4;
 /** How fast the camera eases toward its target azimuth / zoom, per second. */
 const SMOOTHING = 9;
 
+/** How far the view may be panned from the middle of the room, in world units. */
+const PAN_LIMIT = 4;
+
 /**
- * Orthographic isometric camera with four fixed viewing corners.
+ * Orthographic isometric camera at a fixed angle.
  *
- * Rotation snaps to 90 degree steps so the cutaway room always keeps the same
- * two walls behind the action; dragging or Q/E nudges it to the next corner and
- * it eases the rest of the way.
+ * The view never rotates: the cutaway room only has two walls, and turning past
+ * them shows the room from behind its own missing walls. Dragging pans instead,
+ * which is what you actually want when the room is bigger than the screen.
  */
 export class IsoCamera {
   readonly camera: THREE.OrthographicCamera;
@@ -28,18 +31,19 @@ export class IsoCamera {
   private readonly desiredTarget = new THREE.Vector3(0, 0.5, 0);
   private homeZoom = 1;
 
-  /** Which of the four corners we are heading to. */
-  private quadrant = 0;
-  private azimuth = Math.PI / 4;
-  private targetAzimuth = Math.PI / 4;
+  private readonly azimuth = Math.PI / 4;
   private zoom = 1;
   private targetZoom = 1;
 
   private readonly raycaster = new THREE.Raycaster();
   private readonly pointer = new THREE.Vector2();
   private dragging = false;
-  private dragStartX = 0;
   private dragMoved = false;
+  private lastPointerX = 0;
+  private lastPointerY = 0;
+  /** Screen-space pan axes, derived from the fixed camera angle. */
+  private readonly panRight = new THREE.Vector3();
+  private readonly panForward = new THREE.Vector3();
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
@@ -48,10 +52,33 @@ export class IsoCamera {
     this.attachInput();
   }
 
-  /** Step to the next / previous corner. `direction` is +1 or -1. */
-  rotate(direction: number): void {
-    this.quadrant += direction;
-    this.targetAzimuth = Math.PI / 4 + this.quadrant * (Math.PI / 2);
+  /**
+   * Slide the view across the floor. `dx` and `dy` are in pixels, mapped so
+   * the world appears to follow the cursor.
+   */
+  pan(dx: number, dy: number): void {
+    const worldPerPixel =
+      (this.camera.top - this.camera.bottom) /
+      (this.canvas.clientHeight || window.innerHeight);
+
+    this.panRight.set(Math.cos(this.azimuth), 0, -Math.sin(this.azimuth));
+    this.panForward.set(Math.sin(this.azimuth), 0, Math.cos(this.azimuth));
+
+    this.desiredTarget
+      .addScaledVector(this.panRight, -dx * worldPerPixel)
+      // Dragging down should pull the far end of the room toward the viewer.
+      .addScaledVector(this.panForward, -dy * worldPerPixel / Math.cos(ELEVATION));
+
+    this.desiredTarget.x = THREE.MathUtils.clamp(
+      this.desiredTarget.x,
+      this.homeTarget.x - PAN_LIMIT,
+      this.homeTarget.x + PAN_LIMIT,
+    );
+    this.desiredTarget.z = THREE.MathUtils.clamp(
+      this.desiredTarget.z,
+      this.homeTarget.z - PAN_LIMIT,
+      this.homeTarget.z + PAN_LIMIT,
+    );
   }
 
   /** Multiply the zoom level; >1 zooms in. */
@@ -76,13 +103,17 @@ export class IsoCamera {
     this.targetZoom = this.homeZoom;
   }
 
+  /** Recentre without changing zoom. */
+  recentre(): void {
+    this.desiredTarget.copy(this.homeTarget);
+  }
+
   /**
    * Ease toward the target orientation. Uses unscaled delta on purpose: camera
    * feel should not change when the player fast-forwards the simulation.
    */
   update(delta: number): void {
     const t = 1 - Math.exp(-SMOOTHING * delta);
-    this.azimuth += (this.targetAzimuth - this.azimuth) * t;
     this.zoom += (this.targetZoom - this.zoom) * t;
     this.target.lerp(this.desiredTarget, t);
     this.applyFrustum();
@@ -143,19 +174,20 @@ export class IsoCamera {
     this.canvas.addEventListener("pointerdown", (event) => {
       this.dragging = true;
       this.dragMoved = false;
-      this.dragStartX = event.clientX;
+      this.lastPointerX = event.clientX;
+      this.lastPointerY = event.clientY;
       this.canvas.setPointerCapture(event.pointerId);
     });
 
     this.canvas.addEventListener("pointermove", (event) => {
       if (!this.dragging) return;
-      const dx = event.clientX - this.dragStartX;
-      // One corner per ~120px of horizontal drag, then re-arm.
-      if (Math.abs(dx) > 120) {
-        this.rotate(dx > 0 ? -1 : 1);
-        this.dragStartX = event.clientX;
-        this.dragMoved = true;
-      }
+      const dx = event.clientX - this.lastPointerX;
+      const dy = event.clientY - this.lastPointerY;
+      this.lastPointerX = event.clientX;
+      this.lastPointerY = event.clientY;
+      // A few pixels of slop so a slightly shaky click still counts as a click.
+      if (Math.abs(dx) + Math.abs(dy) > 2) this.dragMoved = true;
+      this.pan(dx, dy);
     });
 
     const endDrag = (event: PointerEvent) => {
@@ -177,9 +209,5 @@ export class IsoCamera {
       { passive: false },
     );
 
-    window.addEventListener("keydown", (event) => {
-      if (event.key === "q" || event.key === "Q") this.rotate(-1);
-      if (event.key === "e" || event.key === "E") this.rotate(1);
-    });
   }
 }

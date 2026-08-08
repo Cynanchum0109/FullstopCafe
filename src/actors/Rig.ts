@@ -1,6 +1,14 @@
 import * as THREE from "three";
 import { palette } from "../world/palette";
-import { cone, sphere, flatMaterial, flatMaterialDouble } from "../world/materials";
+import {
+  cone,
+  sphere,
+  flatMaterial,
+  flatMaterialDouble,
+  cardMaterial,
+  cardDepthMaterial,
+} from "../world/materials";
+import { getTexture } from "./textures";
 import {
   buildPiece,
   pieceColor,
@@ -207,9 +215,12 @@ export class Rig {
   readonly spec: RigSpec;
 
   private readonly rest: RestTransform[] = [];
+  /** Index of the piece the tuner has selected, or -1. */
+  private readonly highlight: number;
 
-  constructor(spec: Partial<RigSpec> = {}) {
+  constructor(spec: Partial<RigSpec> = {}, options: { highlight?: number } = {}) {
     this.spec = { ...DEFAULT_RIG_SPEC, ...spec };
+    this.highlight = options.highlight ?? -1;
     this.joints = this.build();
     this.captureRest();
   }
@@ -323,11 +334,23 @@ export class Rig {
     pieceRoot.name = "pieces";
     pieceRoot.position.y = centre;
     head.add(pieceRoot);
-    for (const piece of s.pieces) {
-      pieceRoot.add(
-        buildPiece(piece, s.headRadius, flatMaterial(pieceColor(piece.color, s))),
-      );
-    }
+    s.pieces.forEach((piece, index) => {
+      const tint = pieceColor(piece.color, s);
+      const texture = piece.texture ? getTexture(piece.texture) : undefined;
+      const material = texture ? cardMaterial(texture, tint) : flatMaterial(tint);
+      const node = buildPiece(piece, s.headRadius, material);
+
+      if (texture) {
+        node.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            child.customDepthMaterial = cardDepthMaterial(texture);
+          }
+        });
+      }
+
+      if (index === this.highlight) markHighlighted(node);
+      pieceRoot.add(node);
+    });
 
     const hair = new THREE.Group();
     hair.name = "hair";
@@ -485,6 +508,36 @@ export class Rig {
         visible: joint.visible,
       });
     }
+  }
+}
+
+/**
+ * Trace the selected piece's silhouette.
+ *
+ * `EdgesGeometry` rather than a wireframe: a wireframe draws every triangle
+ * edge, which on an extruded outline is a mess of diagonals that hides the
+ * shape you are trying to judge. This keeps only the feature edges. An overlay
+ * rather than a swapped material, because you need to see the piece's real
+ * colour while editing it, and `depthTest: false` so the outline stays visible
+ * even where the piece is buried in the hair mass.
+ */
+function markHighlighted(node: THREE.Object3D): void {
+  const meshes: THREE.Mesh[] = [];
+  node.traverse((child) => {
+    if (child instanceof THREE.Mesh) meshes.push(child);
+  });
+  for (const mesh of meshes) {
+    const outline = new THREE.LineSegments(
+      new THREE.EdgesGeometry(mesh.geometry, 20),
+      new THREE.LineBasicMaterial({
+        color: 0x7fe7ff,
+        depthTest: false,
+        transparent: true,
+        opacity: 0.95,
+      }),
+    );
+    outline.renderOrder = 999;
+    mesh.add(outline);
   }
 }
 

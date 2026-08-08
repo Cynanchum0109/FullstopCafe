@@ -136,7 +136,8 @@ export type NumericPieceKey =
   | "bend"
   | "pitch"
   | "spin"
-  | "thickness";
+  | "thickness"
+  | "pad";
 
 export interface PieceControl {
   key: NumericPieceKey;
@@ -157,7 +158,9 @@ export const PIECE_CONTROLS: PieceControl[] = [
   { key: "bend", label: "平面内转", min: -1.6, max: 1.6, step: 0.02 },
   { key: "pitch", label: "翘离头皮", min: -1.2, max: 1.2, step: 0.02 },
   { key: "spin", label: "自转", min: -1.6, max: 1.6, step: 0.02 },
-  { key: "thickness", label: "厚度", min: 0.005, max: 0.12, step: 0.002 },
+  // Zero is a real value here: a single flat face with no sides.
+  { key: "thickness", label: "厚度", min: 0, max: 0.12, step: 0.002 },
+  { key: "pad", label: "画布余量", min: 1, max: 3, step: 0.05 },
 ];
 
 export const PIECE_SHAPES = [
@@ -166,7 +169,10 @@ export const PIECE_SHAPES = [
   { value: "triangle", label: "三角" },
   { value: "lock", label: "发绺" },
   { value: "spike", label: "尖刺" },
+  { value: "leaf", label: "叶形（曲线）" },
+  { value: "round", label: "椭圆（曲线）" },
   { value: "disc", label: "圆片" },
+  { value: "custom", label: "自定义（画布追踪）" },
 ] as const;
 
 export const PIECE_COLORS = [

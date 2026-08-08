@@ -14,7 +14,10 @@ export type PieceShape =
   | "triangle"
   | "lock"
   | "spike"
-  | "disc";
+  | "disc"
+  | "leaf"
+  | "round"
+  | "custom";
 
 /** Which colour from the rig spec a piece paints itself with. */
 export type PieceColor =
@@ -56,7 +59,33 @@ export interface SurfacePiece {
   /** Twist around the slab's own normal. */
   spin: number;
 
+  /**
+   * Zero means a single flat face with no sides at all. Anything above it
+   * extrudes the outline into a slab.
+   */
   thickness: number;
+
+  /**
+   * Id of a texture from `textures.ts`. When set, the outline stops mattering:
+   * the piece becomes a plain rectangle and the image's alpha decides the
+   * silhouette. Two competing outlines clipping each other is unworkable to
+   * tune, so exactly one of them is in charge at a time.
+   */
+  texture?: string;
+  /**
+   * How much larger the textured card is than the outline's bounding box.
+   * The margin is what lets painted strokes spill past the original shape.
+   */
+  pad: number;
+
+  /**
+   * Outline traced from a painted shape, as flat x,y pairs normalised to the
+   * card rectangle (0..1, y down). Used when `shape` is `custom`.
+   *
+   * Normalised rather than absolute so width, length and pad keep scaling a
+   * hand-drawn shape exactly like a preset one.
+   */
+  path?: number[];
 }
 
 export const DEFAULT_PIECE: SurfacePiece = {
@@ -73,6 +102,7 @@ export const DEFAULT_PIECE: SurfacePiece = {
   pitch: 0,
   spin: 0,
   thickness: 0.035,
+  pad: 1.4,
 };
 
 /**
@@ -89,6 +119,35 @@ function outline(piece: SurfacePiece): THREE.Shape {
   const skew = piece.skew;
 
   switch (piece.shape) {
+    case "custom": {
+      // Hand-drawn outline, stored normalised to the card rectangle.
+      const path = piece.path;
+      // Nothing traced yet: show a plain rectangle rather than an empty mesh,
+      // so a half-finished piece is still visible and selectable.
+      if (!path || path.length < 6) {
+        shape.moveTo(-halfWidth, 0);
+        shape.lineTo(halfWidth, 0);
+        shape.lineTo(halfWidth, -length);
+        shape.lineTo(-halfWidth, -length);
+        shape.closePath();
+        return shape;
+      }
+      const bounds = cardBounds(piece);
+      const spanX = bounds.maxX - bounds.minX;
+      const spanY = bounds.maxY - bounds.minY;
+      for (let i = 0; i + 1 < path.length; i += 2) {
+        const nx = path[i] ?? 0;
+        const ny = path[i + 1] ?? 0;
+        const x = bounds.minX + nx * spanX;
+        // Canvas y runs down; piece space runs up.
+        const y = bounds.maxY - ny * spanY;
+        if (i === 0) shape.moveTo(x, y);
+        else shape.lineTo(x, y);
+      }
+      shape.closePath();
+      return shape;
+    }
+
     case "disc": {
       // Ellipse for eyes, blush, and anything else that reads as a dot.
       const sides = 8;
@@ -128,6 +187,31 @@ function outline(piece: SurfacePiece): THREE.Shape {
       break;
     }
 
+    case "round": {
+      // A true ellipse rather than a polygon. `curveSegments` on the extrude
+      // decides how round it actually comes out.
+      shape.absellipse(0, -length / 2, halfWidth, length / 2, 0, Math.PI * 2, false, 0);
+      break;
+    }
+
+    case "leaf": {
+      // Curved sides pulling to a point: the shape a real lock of hair makes.
+      shape.moveTo(-halfWidth, 0);
+      shape.quadraticCurveTo(
+        -halfWidth * 1.15,
+        -length * 0.55,
+        skew - tipHalf * 0.2,
+        -length,
+      );
+      shape.quadraticCurveTo(
+        halfWidth * 1.15,
+        -length * 0.55,
+        halfWidth,
+        0,
+      );
+      break;
+    }
+
     case "wedge":
     case "quad":
     default: {
@@ -142,6 +226,72 @@ function outline(piece: SurfacePiece): THREE.Shape {
 
   shape.closePath();
   return shape;
+}
+
+/**
+ * The rectangle a textured card occupies, in the piece's own 2D space.
+ *
+ * Both the card geometry and the paint board's guide overlay derive from this,
+ * which is what makes what you draw land exactly where you drew it.
+ */
+export function cardBounds(piece: SurfacePiece): {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+} {
+  const pad = Math.max(piece.pad, 1);
+
+  // `custom` gets the plain formula. Its path is stored normalised against
+  // these bounds, so deriving the bounds from the path would feed back on
+  // itself and the shape would creep every time it was rebuilt.
+  if (piece.shape === "custom") {
+    // Deliberately the same square the preset shapes produce: the path was
+    // normalised against those bounds while tracing, and any difference here
+    // would shift and rescale the drawing the moment the shape switched over.
+    const half = (Math.max(piece.width, piece.length) / 2) * pad;
+    const centreY = -piece.length / 2;
+    return {
+      minX: -half,
+      maxX: half,
+      minY: centreY - half,
+      maxY: centreY + half,
+    };
+  }
+
+  // Everything else centres the card on the outline's real bounding box, so a
+  // skewed or asymmetric shape still sits in the middle of the paint board.
+  const points = outline(piece).getPoints(16);
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const point of points) {
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+  }
+  if (!Number.isFinite(minX)) {
+    return { minX: -0.1, maxX: 0.1, minY: -0.1, maxY: 0.1 };
+  }
+
+  const centreX = (minX + maxX) / 2;
+  const centreY = (minY + maxY) / 2;
+  // Square the card off: the paint board is square, and a square card means the
+  // guide is never stretched along one axis.
+  const half = (Math.max(maxX - minX, maxY - minY) / 2) * pad;
+  return {
+    minX: centreX - half,
+    maxX: centreX + half,
+    minY: centreY - half,
+    maxY: centreY + half,
+  };
+}
+
+/** Sample the outline as a point list, for drawing the guide on the canvas. */
+export function outlinePoints(piece: SurfacePiece): THREE.Vector2[] {
+  return outline(piece).getPoints(24);
 }
 
 /** Resolve a piece's colour slot against the character's palette. */
@@ -187,16 +337,7 @@ export function buildPiece(
   tilt.rotation.x = piece.elevation;
   swing.add(tilt);
 
-  const geometry = new THREE.ExtrudeGeometry(outline(piece), {
-    depth: piece.thickness,
-    bevelEnabled: false,
-    curveSegments: 1,
-  });
-  // Extrude grows along +Z from the outline plane; recentre it so `lift` means
-  // the same thing whatever the thickness is.
-  geometry.translate(0, 0, -piece.thickness / 2);
-
-  const mesh = new THREE.Mesh(geometry, material);
+  const mesh = new THREE.Mesh(pieceGeometry(piece), material);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
 
@@ -209,6 +350,49 @@ export function buildPiece(
 
   tilt.add(mesh);
   return swing;
+}
+
+/**
+ * Geometry for a piece, in one of three forms:
+ *
+ * - textured: a plain rectangle covering `cardBounds`, UVs 0..1, so the image
+ *   maps onto it one to one and its alpha supplies the silhouette
+ * - zero thickness: a single flat face, no sides
+ * - otherwise: the outline extruded into a slab
+ */
+function pieceGeometry(piece: SurfacePiece): THREE.BufferGeometry {
+  if (piece.texture) {
+    const bounds = cardBounds(piece);
+    const geometry = new THREE.PlaneGeometry(
+      bounds.maxX - bounds.minX,
+      bounds.maxY - bounds.minY,
+    );
+    geometry.translate(
+      (bounds.minX + bounds.maxX) / 2,
+      (bounds.minY + bounds.maxY) / 2,
+      0,
+    );
+    return geometry;
+  }
+
+  const shape = outline(piece);
+  // Curves only exist on `leaf` and `round`; everything else is straight edges
+  // and extra segments would just cost vertices.
+  const curveSegments = piece.shape === "leaf" || piece.shape === "round" ? 8 : 1;
+
+  if (piece.thickness < 0.002) {
+    return new THREE.ShapeGeometry(shape, curveSegments);
+  }
+
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: piece.thickness,
+    bevelEnabled: false,
+    curveSegments,
+  });
+  // Extrude grows along +Z from the outline plane; recentre it so `lift` means
+  // the same thing whatever the thickness is.
+  geometry.translate(0, 0, -piece.thickness / 2);
+  return geometry;
 }
 
 // --- Authoring helpers ---------------------------------------------------

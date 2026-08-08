@@ -18,6 +18,8 @@ import {
   type PieceShape,
   type SurfacePiece,
 } from "../actors/SurfacePiece";
+import { listTextures } from "../actors/textures";
+import { PaintBoard } from "./PaintBoard";
 
 /** What the tuner needs from the camera. Keeps it decoupled from IsoCamera. */
 export interface TunerCamera {
@@ -52,6 +54,9 @@ export class RigTuner {
   private pieceIndex = 0;
   private yawInput: HTMLInputElement | undefined;
   private yawValue: HTMLSpanElement | undefined;
+  private paint: PaintBoard | undefined;
+  private refreshPieceList: (() => void) | undefined;
+  private refreshShapeEnabled: (() => void) | undefined;
 
   constructor(
     container: HTMLElement,
@@ -101,6 +106,19 @@ export class RigTuner {
 
     container.appendChild(this.root);
 
+    // One instance for the whole session, living outside the sidebar so it can
+    // be dragged and resized freely.
+    this.paint = new PaintBoard({
+      piece: () => this.piece(),
+      rebuild: () => {
+        this.rebuild();
+        this.refreshPieceList?.();
+        for (const refresh of this.inputs) refresh();
+      },
+      say: (message) => this.say(message),
+    });
+    container.appendChild(this.paint.root);
+
     this.buildTabs();
     this.buildControls();
 
@@ -113,8 +131,14 @@ export class RigTuner {
   toggle(): void {
     this.open = !this.open;
     this.root.hidden = !this.open;
-    if (this.open) this.focusCurrent();
-    else this.camera.clearFocus();
+    if (this.open) {
+      this.focusCurrent();
+      this.paint?.refresh();
+    } else {
+      this.camera.clearFocus();
+    }
+    // Adds or removes the selection cage.
+    this.rebuild();
   }
 
   /** Point the tuner at an actor. Safe to call whether or not the panel is open. */
@@ -212,6 +236,9 @@ export class RigTuner {
     list.addEventListener("change", () => {
       this.pieceIndex = Number(list.value);
       for (const refresh of this.inputs) refresh();
+      this.paint?.refresh();
+      // Rebuild so the wireframe cage moves to the newly selected piece.
+      this.rebuild();
     });
     section.appendChild(list);
 
@@ -256,17 +283,81 @@ export class RigTuner {
     );
     section.appendChild(buttons);
 
+    this.refreshPieceList = refreshList;
+
     section.appendChild(
       this.pieceDropdown("shape", "形状", PIECE_SHAPES, refreshList),
     );
     section.appendChild(
       this.pieceDropdown("color", "颜色", PIECE_COLORS, refreshList),
     );
+    section.appendChild(this.textureDropdown());
+
+    const paintRow = document.createElement("div");
+    paintRow.className = "tuner__pieceButtons";
+    paintRow.appendChild(
+      this.button("🖌 打开画板", () => {
+        this.paint?.toggle();
+      }),
+    );
+    section.appendChild(paintRow);
+
     for (const control of PIECE_CONTROLS) {
       section.appendChild(this.pieceSlider(control));
     }
 
     return section;
+  }
+
+  /**
+   * Texture selector. Picking one flips the piece into card mode, where the
+   * shape dropdown no longer does anything -- so it gets disabled, rather than
+   * silently ignored.
+   */
+  private textureDropdown(): HTMLElement {
+    const row = document.createElement("label");
+    row.className = "tuner__row";
+
+    const name = document.createElement("span");
+    name.className = "tuner__label";
+    name.textContent = "贴图";
+
+    const select = document.createElement("select");
+    select.className = "tuner__select";
+
+    const rebuildOptions = () => {
+      select.replaceChildren();
+      const none = document.createElement("option");
+      none.value = "";
+      none.textContent = "（无，用多边形）";
+      select.appendChild(none);
+      for (const entry of listTextures()) {
+        const option = document.createElement("option");
+        option.value = entry.id;
+        option.textContent = entry.label;
+        select.appendChild(option);
+      }
+    };
+    rebuildOptions();
+
+    select.addEventListener("change", () => {
+      const piece = this.piece();
+      if (!piece) return;
+      if (select.value) piece.texture = select.value;
+      else delete piece.texture;
+      this.rebuild();
+      this.paint?.refresh();
+      this.refreshShapeEnabled?.();
+    });
+
+    row.append(name, select);
+    this.inputs.push(() => {
+      const piece = this.piece();
+      select.disabled = !piece;
+      rebuildOptions();
+      select.value = piece?.texture ?? "";
+    });
+    return row;
   }
 
   /**
@@ -390,11 +481,15 @@ export class RigTuner {
     });
 
     row.append(name, select);
-    this.inputs.push(() => {
+    const refresh = () => {
       const piece = this.piece();
-      select.disabled = !piece;
+      // A textured piece takes its silhouette from the image's alpha, so the
+      // outline preset genuinely has no effect and should look inert.
+      select.disabled = !piece || (key === "shape" && Boolean(piece.texture));
       if (piece) select.value = piece[key];
-    });
+    };
+    if (key === "shape") this.refreshShapeEnabled = refresh;
+    this.inputs.push(refresh);
     return row;
   }
 
@@ -495,7 +590,11 @@ export class RigTuner {
   }
 
   private rebuild(): void {
-    this.current.applySpec(this.spec());
+    // Only cage the selected piece while the panel is open; a wireframe box
+    // floating on a character's head during normal play would be nonsense.
+    this.current.applySpec(this.spec(), {
+      highlight: this.open ? this.pieceIndex : -1,
+    });
   }
 
   /**

@@ -50,6 +50,57 @@ export function box(
 }
 
 /**
+ * Material for an alpha-cut texture card.
+ *
+ * `alphaTest` rather than `transparent`: transparency needs back-to-front
+ * sorting, and a head carrying twenty overlapping hair cards flickers badly
+ * when the camera moves. Discarding pixels below a threshold sidesteps sorting
+ * entirely at the cost of hard edges, which suits this art style anyway.
+ *
+ * `color` tints the map, so cards can be drawn in greyscale once and reused
+ * across characters with different hair colours.
+ */
+const cardCache = new Map<string, THREE.MeshLambertMaterial>();
+
+export function cardMaterial(
+  texture: THREE.Texture,
+  tint: number,
+): THREE.MeshLambertMaterial {
+  const key = `${texture.uuid}:${tint}`;
+  const existing = cardCache.get(key);
+  if (existing) return existing;
+
+  const material = new THREE.MeshLambertMaterial({
+    map: texture,
+    color: tint,
+    alphaTest: 0.5,
+    transparent: false,
+    side: THREE.DoubleSide,
+  });
+  cardCache.set(key, material);
+  return material;
+}
+
+/**
+ * Depth material matching a card, so its shadow follows the alpha cutout
+ * instead of being a solid rectangle. three.js will not infer this.
+ */
+const cardDepthCache = new Map<string, THREE.MeshDepthMaterial>();
+
+export function cardDepthMaterial(texture: THREE.Texture): THREE.MeshDepthMaterial {
+  const existing = cardDepthCache.get(texture.uuid);
+  if (existing) return existing;
+
+  const material = new THREE.MeshDepthMaterial({
+    depthPacking: THREE.RGBADepthPacking,
+    map: texture,
+    alphaTest: 0.5,
+  });
+  cardDepthCache.set(texture.uuid, material);
+  return material;
+}
+
+/**
  * Faceted ball. Low segment counts on purpose: with flat shading the facets are
  * the style, and a smooth sphere would look out of place next to the boxes.
  */

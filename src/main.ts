@@ -9,6 +9,7 @@ import { Lighting } from "./render/Lighting";
 import { Office, ROOM_MAX_X, ROOM_MAX_Z, ROOM_MIN_X, ROOM_MIN_Z } from "./world/Office";
 import { Actor } from "./actors/Actor";
 import { profiles } from "./actors/profiles";
+import { loadPainted } from "./actors/textures";
 import { HUD } from "./ui/HUD";
 import { RigTuner } from "./ui/RigTuner";
 
@@ -161,6 +162,13 @@ function frame(nowMs: number): void {
 // Start at mid-morning rather than midnight so the first frame is well lit.
 clock.skipSeconds(0.4 * (15 * 60));
 requestAnimationFrame(frame);
+
+// Painted hair textures survive a reload. Rebuild once they are decoded, since
+// pieces referencing them were built against a texture that did not exist yet.
+loadPainted().then((count) => {
+  if (count === 0) return;
+  for (const actor of actors) actor.applySpec(actor.rig.spec);
+});
 
 // This module owns a render loop and a WebGL context, neither of which can be
 // hot-swapped. Without this, every edit stacks another loop on the same canvas

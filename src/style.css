@@ -201,6 +201,142 @@ body {
   font-size: 11px;
 }
 
+/* --- Paint board ----------------------------------------------------- */
+
+.paint-panel[hidden] {
+  display: none;
+}
+
+.paint-panel {
+  /* Floating, draggable and resizable: painting inside a 300px sidebar column
+     is miserable. */
+  top: 80px;
+  left: 24px;
+  right: auto;
+  width: 340px;
+  height: 520px;
+  min-width: 240px;
+  min-height: 360px;
+  max-width: 90vw;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  resize: both;
+  overflow: hidden;
+}
+
+.paint-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+}
+
+.paint-panel__close {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.paint-panel__close:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.paint-panel__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.paint__stack {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  margin: 0 auto 6px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 4px;
+  /* Checkerboard so transparent areas are obvious while painting. Mid greys:
+     dark enough that white strokes read, light enough that the pattern does. */
+  background-color: #7c7c86;
+  background-image:
+    linear-gradient(45deg, #616169 25%, transparent 25%),
+    linear-gradient(-45deg, #616169 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #616169 75%),
+    linear-gradient(-45deg, transparent 75%, #616169 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.paint__canvas,
+.paint__guide {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* The board is deliberately low-res; do not let the browser smooth it. */
+  image-rendering: pixelated;
+}
+
+.paint__guide {
+  pointer-events: none;
+  image-rendering: auto;
+}
+
+.paint__swatches {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 5px;
+}
+
+.paint__swatch {
+  flex: 1;
+  height: 18px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.paint__swatch.is-active {
+  outline: 2px solid #7fe7ff;
+  outline-offset: 1px;
+}
+
+.paint__custom {
+  width: 100%;
+  height: 18px;
+  margin-bottom: 5px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.paint__buttons {
+  display: flex;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.paint__buttons .tuner__button {
+  padding: 4px 0;
+  font-size: 10px;
+}
+
 .tuner__row--turntable {
   margin: 0;
   padding: 8px 12px;

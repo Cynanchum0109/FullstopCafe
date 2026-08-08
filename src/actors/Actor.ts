@@ -68,10 +68,10 @@ export class Actor {
    * Rebuild the body from a new spec, in place. Used by the rig tuner; the
    * actor keeps its position, heading and animation state across the swap.
    */
-  applySpec(spec: Partial<RigSpec>): void {
+  applySpec(spec: Partial<RigSpec>, options: { highlight?: number } = {}): void {
     this.object.remove(this.rig.root);
     this.rig.dispose();
-    this.rig = new Rig(spec);
+    this.rig = new Rig(spec, options);
     this.object.add(this.rig.root);
     this.tagForPicking();
     // The captured pose points at joints that no longer exist.

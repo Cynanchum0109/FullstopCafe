@@ -1,11 +1,22 @@
 import type { Actor } from "../actors/Actor";
 import { DEFAULT_RIG_SPEC, type RigSpec } from "../actors/Rig";
 import {
+  PIECE_COLORS,
+  PIECE_CONTROLS,
+  PIECE_SHAPES,
   RIG_COLOR_CONTROLS,
   RIG_CONTROL_GROUPS,
   TUNABLE_KEYS,
   type NumberControl,
+  type PieceControl,
 } from "../actors/rigControls";
+import {
+  DEFAULT_PIECE,
+  mirrored,
+  type PieceColor,
+  type PieceShape,
+  type SurfacePiece,
+} from "../actors/SurfacePiece";
 
 /** What the tuner needs from the camera. Keeps it decoupled from IsoCamera. */
 export interface TunerCamera {
@@ -34,6 +45,8 @@ export class RigTuner {
   private open = false;
   /** Rebuilt on every actor switch, so sliders show the right values. */
   private inputs: Array<() => void> = [];
+  /** Index into the current spec's `pieces`, or -1 when none is selected. */
+  private pieceIndex = 0;
 
   constructor(
     container: HTMLElement,
@@ -44,7 +57,12 @@ export class RigTuner {
     if (!first) throw new Error("RigTuner needs at least one actor");
     this.current = first;
     for (const actor of actors) {
-      this.specs.set(actor.id, { ...actor.rig.spec });
+      // Deep-copy the piece list: the working copy must not alias the array the
+      // profile module exports, or editing one character mutates the source.
+      this.specs.set(actor.id, {
+        ...actor.rig.spec,
+        pieces: actor.rig.spec.pieces.map((piece) => ({ ...piece })),
+      });
     }
 
     this.root = document.createElement("div");
@@ -106,6 +124,7 @@ export class RigTuner {
         actor.id === this.current.id ? "tuner__tab tuner__tab--on" : "tuner__tab";
       tab.addEventListener("click", () => {
         this.current = actor;
+        this.pieceIndex = 0;
         this.buildTabs();
         this.buildControls();
         this.focusCurrent();
@@ -132,6 +151,8 @@ export class RigTuner {
       this.body.appendChild(section);
     }
 
+    this.body.appendChild(this.buildPieceEditor());
+
     const colors = document.createElement("section");
     colors.className = "tuner__group";
     const colorTitle = document.createElement("h4");
@@ -142,6 +163,181 @@ export class RigTuner {
     }
     colors.appendChild(this.toggleRow("goggles", "护目镜"));
     this.body.appendChild(colors);
+
+    // Piece sliders are built before a selection is guaranteed, so seed them.
+    for (const refresh of this.inputs) refresh();
+  }
+
+  /**
+   * Editor for the surface pieces -- fringe, side locks, eyes, blush.
+   *
+   * A list plus one set of sliders for whichever piece is selected, rather than
+   * every piece expanded at once: a head can easily carry fifteen of them and
+   * a wall of two hundred sliders is unusable.
+   */
+  private buildPieceEditor(): HTMLElement {
+    const section = document.createElement("section");
+    section.className = "tuner__group";
+
+    const title = document.createElement("h4");
+    title.textContent = "贴面部件";
+    section.appendChild(title);
+
+    const list = document.createElement("select");
+    list.className = "tuner__list";
+    list.size = 6;
+    const refreshList = () => {
+      list.replaceChildren();
+      this.spec().pieces.forEach((piece, index) => {
+        const option = document.createElement("option");
+        option.value = String(index);
+        option.textContent = `${index + 1}. ${labelFor(piece)}`;
+        option.selected = index === this.pieceIndex;
+        list.appendChild(option);
+      });
+    };
+    refreshList();
+    list.addEventListener("change", () => {
+      this.pieceIndex = Number(list.value);
+      for (const refresh of this.inputs) refresh();
+    });
+    section.appendChild(list);
+
+    const buttons = document.createElement("div");
+    buttons.className = "tuner__pieceButtons";
+    const after = (mutate: () => void) => {
+      mutate();
+      refreshList();
+      for (const refresh of this.inputs) refresh();
+      this.rebuild();
+    };
+    buttons.append(
+      this.button("新建", () =>
+        after(() => {
+          this.spec().pieces.push({ ...DEFAULT_PIECE });
+          this.pieceIndex = this.spec().pieces.length - 1;
+        }),
+      ),
+      this.button("复制", () =>
+        after(() => {
+          const piece = this.piece();
+          if (!piece) return;
+          this.spec().pieces.splice(this.pieceIndex + 1, 0, { ...piece });
+          this.pieceIndex += 1;
+        }),
+      ),
+      this.button("镜像", () =>
+        after(() => {
+          const piece = this.piece();
+          if (!piece) return;
+          this.spec().pieces.splice(this.pieceIndex + 1, 0, mirrored(piece));
+          this.pieceIndex += 1;
+        }),
+      ),
+      this.button("删除", () =>
+        after(() => {
+          if (this.spec().pieces.length === 0) return;
+          this.spec().pieces.splice(this.pieceIndex, 1);
+          this.pieceIndex = Math.max(0, this.pieceIndex - 1);
+        }),
+      ),
+    );
+    section.appendChild(buttons);
+
+    section.appendChild(
+      this.pieceDropdown("shape", "形状", PIECE_SHAPES, refreshList),
+    );
+    section.appendChild(
+      this.pieceDropdown("color", "颜色", PIECE_COLORS, refreshList),
+    );
+    for (const control of PIECE_CONTROLS) {
+      section.appendChild(this.pieceSlider(control));
+    }
+
+    return section;
+  }
+
+  private piece(): SurfacePiece | undefined {
+    return this.spec().pieces[this.pieceIndex];
+  }
+
+  private pieceSlider(control: PieceControl): HTMLElement {
+    const row = document.createElement("label");
+    row.className = "tuner__row";
+
+    const name = document.createElement("span");
+    name.className = "tuner__label";
+    name.textContent = control.label;
+
+    const input = document.createElement("input");
+    input.type = "range";
+    input.min = String(control.min);
+    input.max = String(control.max);
+    input.step = String(control.step);
+
+    const value = document.createElement("span");
+    value.className = "tuner__value";
+
+    input.addEventListener("input", () => {
+      const piece = this.piece();
+      if (!piece) return;
+      piece[control.key] = Number(input.value);
+      value.textContent = format(piece[control.key]);
+      this.rebuild();
+    });
+
+    row.append(name, input, value);
+    this.inputs.push(() => {
+      const piece = this.piece();
+      input.disabled = !piece;
+      if (!piece) {
+        value.textContent = "-";
+        return;
+      }
+      input.value = String(piece[control.key]);
+      value.textContent = format(piece[control.key]);
+    });
+    return row;
+  }
+
+  private pieceDropdown(
+    key: "shape" | "color",
+    label: string,
+    options: ReadonlyArray<{ value: string; label: string }>,
+    onChange: () => void,
+  ): HTMLElement {
+    const row = document.createElement("label");
+    row.className = "tuner__row";
+
+    const name = document.createElement("span");
+    name.className = "tuner__label";
+    name.textContent = label;
+
+    const select = document.createElement("select");
+    select.className = "tuner__select";
+    for (const option of options) {
+      const element = document.createElement("option");
+      element.value = option.value;
+      element.textContent = option.label;
+      select.appendChild(element);
+    }
+
+    select.addEventListener("change", () => {
+      const piece = this.piece();
+      if (!piece) return;
+      if (key === "shape") piece.shape = select.value as PieceShape;
+      else piece.color = select.value as PieceColor;
+      onChange();
+      this.rebuild();
+    });
+
+    row.append(name, select);
+    this.inputs.push(() => {
+      const piece = this.piece();
+      select.disabled = !piece;
+      if (piece) select.value = piece[key];
+    });
+    return row;
   }
 
   private slider(control: NumberControl): HTMLElement {
@@ -245,9 +441,13 @@ export class RigTuner {
   }
 
   private reset(): void {
-    this.specs.set(this.current.id, { ...DEFAULT_RIG_SPEC });
+    this.specs.set(this.current.id, {
+      ...DEFAULT_RIG_SPEC,
+      pieces: DEFAULT_RIG_SPEC.pieces.map((piece) => ({ ...piece })),
+    });
+    this.pieceIndex = 0;
+    this.buildControls();
     this.rebuild();
-    for (const refresh of this.inputs) refresh();
     this.say("已重置为默认值");
   }
 
@@ -260,6 +460,7 @@ export class RigTuner {
     const spec = this.spec();
     const lines: string[] = [];
     for (const key of TUNABLE_KEYS) {
+      if (key === "pieces") continue;
       const value = spec[key];
       if (value === DEFAULT_RIG_SPEC[key]) continue;
       if (typeof value === "number") {
@@ -269,11 +470,26 @@ export class RigTuner {
         lines.push(`  ${key}: ${value},`);
       }
     }
+    // Pieces always ship in full: they are an array, so "differs from default"
+    // is not a useful question to ask of them.
+    lines.push(`  pieces: [`);
+    for (const piece of spec.pieces) {
+      const fields = Object.entries(piece)
+        .map(([key, value]) =>
+          typeof value === "number"
+            ? `${key}: ${round(value)}`
+            : `${key}: ${JSON.stringify(value)}`,
+        )
+        .join(", ");
+      lines.push(`    { ${fields} },`);
+    }
+    lines.push(`  ],`);
+
     const text = `spec: {\n${lines.join("\n")}\n},`;
 
     try {
       await navigator.clipboard.writeText(text);
-      this.say(`已复制 ${this.current.displayName} 的 spec（${lines.length} 项）`);
+      this.say(`已复制 ${this.current.displayName} 的 spec（含 ${spec.pieces.length} 个部件）`);
     } catch {
       // Clipboard needs a secure context and a user gesture; the console is a
       // reliable fallback and just as easy to copy from.
@@ -293,6 +509,16 @@ export class RigTuner {
       if (this.status.textContent === message) this.status.textContent = "";
     }, 2600);
   }
+}
+
+/** Short human label for a piece in the list, e.g. "发绺 · 头发 · 82°". */
+function labelFor(piece: SurfacePiece): string {
+  const shape =
+    PIECE_SHAPES.find((s) => s.value === piece.shape)?.label ?? piece.shape;
+  const color =
+    PIECE_COLORS.find((c) => c.value === piece.color)?.label ?? piece.color;
+  const degrees = Math.round((piece.azimuth * 180) / Math.PI);
+  return `${shape} · ${color} · ${degrees}°`;
 }
 
 function format(value: number): string {

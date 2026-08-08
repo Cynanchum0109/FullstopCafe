@@ -12,18 +12,9 @@ export type NumericRigKey =
   | "bodySegments"
   | "headSegments"
   | "headRings"
-  | "eyeSize"
-  | "eyeSpacing"
-  | "eyeHeight"
-  | "blush"
   | "capDepth"
   | "backDepth"
   | "faceGap"
-  | "partRatio"
-  | "fringeDrop"
-  | "fringeAsym"
-  | "sideLockLength"
-  | "sideLockAsym"
   | "tailLength"
   | "tailThickness"
   | "tailAnchorY"
@@ -34,6 +25,8 @@ export type NumericRigKey =
 /** Keys of `RigSpec` the tuner exposes as colour swatches. */
 export type ColorRigKey =
   | "skin"
+  | "skinDark"
+  | "eye"
   | "hair"
   | "hairShade"
   | "hairTie"
@@ -85,25 +78,11 @@ export const RIG_CONTROL_GROUPS: ControlGroup[] = [
     ],
   },
   {
-    title: "脸",
-    controls: [
-      { key: "eyeSize", label: "眼睛大小", min: 0.015, max: 0.07, step: 0.002 },
-      { key: "eyeSpacing", label: "眼距", min: 0.15, max: 0.6, step: 0.01 },
-      { key: "eyeHeight", label: "眼高", min: -0.35, max: 0.35, step: 0.01 },
-      { key: "blush", label: "腮红", min: 0, max: 0.06, step: 0.002 },
-    ],
-  },
-  {
-    title: "头发",
+    title: "发团",
     controls: [
       { key: "capDepth", label: "顶冠深度", min: 0.5, max: 1.6, step: 0.02 },
       { key: "backDepth", label: "后发长度", min: 0.8, max: 2.4, step: 0.02 },
       { key: "faceGap", label: "露脸角度", min: 0.8, max: 2.6, step: 0.02 },
-      { key: "partRatio", label: "分缝位置", min: 0.1, max: 0.9, step: 0.01 },
-      { key: "fringeDrop", label: "刘海长度", min: 0, max: 0.32, step: 0.005 },
-      { key: "fringeAsym", label: "刘海偏侧", min: -0.9, max: 0.9, step: 0.02 },
-      { key: "sideLockLength", label: "鬓发长度", min: 0, max: 0.4, step: 0.005 },
-      { key: "sideLockAsym", label: "鬓发偏侧", min: -0.9, max: 0.9, step: 0.02 },
     ],
   },
   {
@@ -126,6 +105,8 @@ export const RIG_CONTROL_GROUPS: ControlGroup[] = [
 
 export const RIG_COLOR_CONTROLS: Array<{ key: ColorRigKey; label: string }> = [
   { key: "skin", label: "皮肤" },
+  { key: "skinDark", label: "腮红" },
+  { key: "eye", label: "眼睛" },
   { key: "hair", label: "头发" },
   { key: "hairShade", label: "刘海暗部" },
   { key: "hairTie", label: "发圈" },
@@ -142,3 +123,60 @@ export const TUNABLE_KEYS: Array<keyof RigSpec> = [
   ...RIG_COLOR_CONTROLS.map((c) => c.key),
   "goggles",
 ];
+
+/** Numeric fields of a `SurfacePiece`, as sliders. */
+export type NumericPieceKey =
+  | "azimuth"
+  | "elevation"
+  | "lift"
+  | "width"
+  | "length"
+  | "taper"
+  | "skew"
+  | "bend"
+  | "pitch"
+  | "spin"
+  | "thickness";
+
+export interface PieceControl {
+  key: NumericPieceKey;
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+}
+
+export const PIECE_CONTROLS: PieceControl[] = [
+  { key: "azimuth", label: "水平角", min: -Math.PI, max: Math.PI, step: 0.02 },
+  { key: "elevation", label: "垂直角", min: -1.4, max: 1.5, step: 0.02 },
+  { key: "lift", label: "外移", min: -0.04, max: 0.1, step: 0.002 },
+  { key: "width", label: "宽", min: 0.01, max: 0.34, step: 0.005 },
+  { key: "length", label: "长", min: 0.01, max: 0.6, step: 0.005 },
+  { key: "taper", label: "收尖", min: 0, max: 1.6, step: 0.02 },
+  { key: "skew", label: "尖端偏移", min: -0.25, max: 0.25, step: 0.005 },
+  { key: "bend", label: "平面内转", min: -1.6, max: 1.6, step: 0.02 },
+  { key: "pitch", label: "翘离头皮", min: -1.2, max: 1.2, step: 0.02 },
+  { key: "spin", label: "自转", min: -1.6, max: 1.6, step: 0.02 },
+  { key: "thickness", label: "厚度", min: 0.005, max: 0.12, step: 0.002 },
+];
+
+export const PIECE_SHAPES = [
+  { value: "quad", label: "矩形" },
+  { value: "wedge", label: "梯形" },
+  { value: "triangle", label: "三角" },
+  { value: "lock", label: "发绺" },
+  { value: "spike", label: "尖刺" },
+  { value: "disc", label: "圆片" },
+] as const;
+
+export const PIECE_COLORS = [
+  { value: "hair", label: "头发" },
+  { value: "hairShade", label: "暗部" },
+  { value: "hairTie", label: "发圈" },
+  { value: "skin", label: "皮肤" },
+  { value: "skinDark", label: "腮红" },
+  { value: "eye", label: "眼睛" },
+  { value: "accent", label: "领口" },
+  { value: "body", label: "身体" },
+  { value: "hem", label: "裙边" },
+] as const;

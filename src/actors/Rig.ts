@@ -1,6 +1,14 @@
 import * as THREE from "three";
 import { palette } from "../world/palette";
-import { box, cone, sphere, flatMaterial, flatMaterialDouble } from "../world/materials";
+import { cone, sphere, flatMaterial, flatMaterialDouble } from "../world/materials";
+import {
+  buildPiece,
+  pieceColor,
+  fringe,
+  pair,
+  DEFAULT_PIECE,
+  type SurfacePiece,
+} from "./SurfacePiece";
 
 /**
  * Everything about how a character looks, as plain numbers.
@@ -27,28 +35,22 @@ export interface RigSpec {
   headSegments: number;
   headRings: number;
 
-  // --- Face ---
-  eyeSize: number;
-  /** Horizontal eye offset, as a fraction of head radius. */
-  eyeSpacing: number;
-  /** Vertical eye offset from the head centre, as a fraction of head radius. */
-  eyeHeight: number;
-  blush: number;
-
-  // --- Hair ---
+  // --- Hair mass ---
   /** How far down the front the crown reaches, radians from the top. */
   capDepth: number;
   /** How far down the back and sides reach, radians from the top. */
   backDepth: number;
   /** Angular size of the opening left for the face, radians. */
   faceGap: number;
-  /** Parting position. 0.5 is centred; 0.3 is a 3:7 side part. */
-  partRatio: number;
-  fringeDrop: number;
-  /** Makes one side of the fringe hang lower than the other, 0..1. */
-  fringeAsym: number;
-  sideLockLength: number;
-  sideLockAsym: number;
+
+  /**
+   * Everything stuck to the surface of the head: fringe, side locks, eyes,
+   * blush, brows. Each is an independently shaped and placed slab, editable
+   * one by one in the rig tuner.
+   */
+  pieces: SurfacePiece[];
+
+  // --- Ponytail ---
   tailLength: number;
   tailThickness: number;
   /** How high up the back of the skull the tail is tied, as a fraction of r. */
@@ -64,6 +66,8 @@ export interface RigSpec {
 
   // --- Colours ---
   skin: number;
+  skinDark: number;
+  eye: number;
   hair: number;
   /** Slightly darker hair tone used on the fringe, for cheap depth. */
   hairShade: number;
@@ -91,19 +95,11 @@ export const DEFAULT_RIG_SPEC: RigSpec = {
   headSegments: 8,
   headRings: 5,
 
-  eyeSize: 0.038,
-  eyeSpacing: 0.36,
-  eyeHeight: 0.0,
-  blush: 0.03,
-
   capDepth: 1.0,
   backDepth: 1.75,
   faceGap: 1.7,
-  partRatio: 0.5,
-  fringeDrop: 0.14,
-  fringeAsym: 0,
-  sideLockLength: 0.16,
-  sideLockAsym: 0,
+  pieces: defaultPieces(),
+
   tailLength: 0.4,
   tailThickness: 0.075,
   tailAnchorY: 0.55,
@@ -115,6 +111,8 @@ export const DEFAULT_RIG_SPEC: RigSpec = {
   goggles: false,
 
   skin: palette.skin,
+  skinDark: palette.skinDark,
+  eye: palette.suitBlack,
   hair: palette.heathHair,
   hairShade: palette.heathHair,
   hairTie: palette.suitCharcoal,
@@ -124,6 +122,53 @@ export const DEFAULT_RIG_SPEC: RigSpec = {
   boots: palette.bootBlack,
   gogglesColor: palette.sinclairGoggle,
 };
+
+/**
+ * The starting face and fringe: two eyes, a centre-parted fringe, and a lock
+ * either side. Profiles override this wholesale; the tuner edits it piece by
+ * piece.
+ */
+export function defaultPieces(): SurfacePiece[] {
+  return [
+    // Eyes. `disc` with length < width gives the squashed almond that reads as
+    // an eye at this size; a circle reads as a bug.
+    ...pair({
+      ...DEFAULT_PIECE,
+      shape: "disc",
+      color: "eye",
+      azimuth: 0.34,
+      elevation: -0.02,
+      lift: 0.004,
+      width: 0.07,
+      length: 0.085,
+      thickness: 0.012,
+    }),
+    // Blush.
+    ...pair({
+      ...DEFAULT_PIECE,
+      shape: "disc",
+      color: "skinDark",
+      azimuth: 0.72,
+      elevation: -0.28,
+      lift: 0.003,
+      width: 0.07,
+      length: 0.05,
+      thickness: 0.01,
+    }),
+    ...fringe({ from: -1.1, to: 1.1, count: 5, length: 0.16 }),
+    // Side locks, hanging past the jaw.
+    ...pair({
+      ...DEFAULT_PIECE,
+      shape: "lock",
+      azimuth: 1.42,
+      elevation: 0.18,
+      width: 0.1,
+      length: 0.2,
+      taper: 0.4,
+      pitch: 0.05,
+    }),
+  ];
+}
 
 /** Named joints an animation is allowed to drive. */
 export interface RigJoints {
@@ -272,7 +317,17 @@ export class Rig {
     headMesh.position.y = centre;
     head.add(headMesh);
 
-    this.buildFace(head, centre, s);
+    // Surface pieces ride on the head, not on the hair group -- the hair group
+    // swings, and eyes that swing with it look seasick.
+    const pieceRoot = new THREE.Group();
+    pieceRoot.name = "pieces";
+    pieceRoot.position.y = centre;
+    head.add(pieceRoot);
+    for (const piece of s.pieces) {
+      pieceRoot.add(
+        buildPiece(piece, s.headRadius, flatMaterial(pieceColor(piece.color, s))),
+      );
+    }
 
     const hair = new THREE.Group();
     hair.name = "hair";
@@ -305,42 +360,11 @@ export class Rig {
     return { bob, body: bodyGroup, head, hair, hairTail, handL, handR, footL, footR };
   }
 
-  private buildFace(head: THREE.Group, centre: number, s: RigSpec): void {
-    const r = s.headRadius;
-    for (const side of [-1, 1] as const) {
-      const eye = new THREE.Mesh(
-        new THREE.CircleGeometry(s.eyeSize, 6),
-        flatMaterial(palette.suitBlack),
-      );
-      eye.position.set(side * s.eyeSpacing * r, centre + s.eyeHeight * r, -r * 0.95);
-      eye.rotation.y = Math.PI;
-      head.add(eye);
-    }
-
-    if (s.blush <= 0) return;
-    for (const side of [-1, 1] as const) {
-      const blush = new THREE.Mesh(
-        new THREE.CircleGeometry(s.blush, 6),
-        flatMaterial(palette.skinDark),
-      );
-      blush.position.set(
-        side * r * 0.66,
-        centre + (s.eyeHeight - 0.28) * r,
-        -r * 0.72,
-      );
-      blush.rotation.y = Math.PI + side * 0.6;
-      head.add(blush);
-    }
-  }
-
   /**
-   * Hair, built from five parametric parts: a crown, a back-and-sides shell
-   * with a wedge cut out for the face, two fringe slabs either side of a
-   * parting, two side locks, and a tail.
-   *
-   * Slabs rather than clusters of little spheres: at this size the detail just
-   * turns to noise, and the flat planes read as stylised hair instead of as a
-   * bad attempt at strands.
+   * The hair *mass*: a crown, a back-and-sides shell with a wedge cut out for
+   * the face, and the ponytail. Everything with a silhouette worth designing --
+   * fringe, side locks -- is a surface piece instead, so it can be shaped and
+   * placed one item at a time.
    */
   private buildHair(
     hair: THREE.Group,
@@ -382,61 +406,7 @@ export class Rig {
     back.castShadow = true;
     hair.add(back);
 
-    // 3. Fringe. Slabs laid around the front of the skull, split at a parting
-    //    line; `partRatio` slides that line sideways, which is the whole
-    //    difference between a centre part and a 3:7 one.
-    //
-    //    Laid out by ANGLE, not by x. A flat slab wide enough to span the face
-    //    in x punches straight out through the sides of the head, because the
-    //    skull is far narrower at the front than it is across the middle.
-    const halfSpan = 1.2;
-    const partAngle = (s.partRatio - 0.5) * 2 * halfSpan;
-    const sides: Array<{ from: number; to: number; drop: number }> = [
-      { from: -halfSpan, to: partAngle, drop: s.fringeDrop * (1 + s.fringeAsym) },
-      { from: partAngle, to: halfSpan, drop: s.fringeDrop * (1 - s.fringeAsym) },
-    ];
-    const surface = r * 0.9;
-    for (const side of sides) {
-      if (side.to - side.from < 0.05 || side.drop < 0.01) continue;
-      // Two pieces per side: enough to follow the curve, few enough to stay
-      // schematic instead of turning into a fringe of individual strands.
-      const pieces = 2;
-      for (let i = 0; i < pieces; i++) {
-        const from = THREE.MathUtils.lerp(side.from, side.to, i / pieces);
-        const to = THREE.MathUtils.lerp(side.from, side.to, (i + 1) / pieces);
-        const mid = (from + to) / 2;
-        const chord = 2 * surface * Math.sin((to - from) / 2);
-        const slab = box(chord * 1.08, side.drop, 0.05, s.hairShade);
-        // Hung from a fixed hairline rather than centred on one, so
-        // `fringeDrop` reads as "how far down the face it comes" and a short
-        // fringe stays clear of the eyes.
-        slab.position.set(
-          Math.sin(mid) * surface,
-          centre + r * 0.75 - side.drop / 2,
-          -Math.cos(mid) * surface,
-        );
-        slab.rotation.y = Math.PI - mid;
-        slab.rotation.x = 0.08;
-        hair.add(slab);
-      }
-    }
-
-    // 4. Side locks framing the face.
-    const lockLengths = [
-      s.sideLockLength * (1 + s.sideLockAsym),
-      s.sideLockLength * (1 - s.sideLockAsym),
-    ];
-    for (let i = 0; i < 2; i++) {
-      const side = i === 0 ? -1 : 1;
-      const length = lockLengths[i] ?? 0;
-      if (length < 0.02) continue;
-      const lock = cone(r * 0.3, r * 0.14, length, s.hair, 5);
-      lock.position.set(side * r * 0.9, centre - length * 0.35, -r * 0.08);
-      lock.rotation.z = side * 0.1;
-      hair.add(lock);
-    }
-
-    // 5. Tail. Two tapering segments chained so a single rotation on `hairTail`
+    // 3. Tail. Two tapering segments chained so a single rotation on `hairTail`
     //    makes the whole thing arc rather than pivot like a stick.
     hairTail.position.set(0, centre + r * s.tailAnchorY, r * 0.82);
     hairTail.rotation.x = s.tailTilt;

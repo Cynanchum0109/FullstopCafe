@@ -23,12 +23,33 @@ Then open http://localhost:5173.
 | `` ` `` | Open the rig tuner |
 | click a character | Show who it is in the HUD |
 
+## Surface pieces
+
+Fringe, side locks, eyes and blush are **surface pieces**: a small 2D outline
+(`THREE.Shape`) extruded to a thin slab (`ExtrudeGeometry`, no bevel), then
+placed on the head sphere by azimuth and elevation with three axes of local
+rotation on top. Six outline presets — rectangle, trapezoid, triangle, hair
+lock, spike, disc — each parameterised by width, length, taper and tip skew.
+
+Three or four vertices per piece, so a whole head of them stays cheap, and any
+shape you can describe with those numbers is available without touching code.
+
+The one thing to know: a piece hangs *tangentially* along the skull, so its
+`length` is an arc. Starting a fringe at the brow instead of at the hairline
+sends it sweeping straight past the eyes and down to the chin.
+
 ## Rig tuner
 
 Press `` ` ``. Every number in `RigSpec` is a slider — proportions, polygon
-counts, face, hair, ponytail, hand and foot size — plus colour swatches. The
+counts, hair mass, ponytail, hand and foot size — plus colour swatches. The
 character rebuilds on every change, the camera frames whoever is selected, and
 **转 45°** spins them so you can check the face.
+
+The **贴面部件** section lists every surface piece on the head. Select one and
+you get its shape and colour dropdowns plus sliders for placement, outline and
+rotation; **新建 / 复制 / 镜像 / 删除** manage the list. 镜像 flips a piece to
+the other side of the head, which is how you build symmetric features without
+doing the arithmetic twice.
 
 **复制 spec** copies only the values that differ from the default, already
 formatted as the `spec` block in `src/actors/profiles/index.ts` — paste it
@@ -53,11 +74,11 @@ limbs turn to mush, whereas a clean cone-plus-ball silhouette stays readable —
 so the entire detail budget goes into hair, which is the only thing that has to
 say *which* character this is from across the room.
 
-There is no `hairStyle` switch. Every head is the same five parts — crown,
-back-and-sides shell with a wedge cut out for the face, fringe slabs either side
-of a parting, side locks, ponytail — and only the numbers differ. That is what
-makes the whole design tunable from sliders rather than from three hard-coded
-special cases.
+There is no `hairStyle` switch. The head is a hair *mass* — crown shell,
+back-and-sides shell with a wedge cut out for the face, ponytail — plus a list
+of surface pieces for everything with a silhouette worth designing. Only the
+numbers differ between characters, which is what makes the whole design tunable
+from sliders rather than from three hard-coded special cases.
 
 Prop mount points (`joints.handL` / `handR`) are empty `Object3D`s, so swapping
 in a `.glb` mug or rifle later needs no rig changes.

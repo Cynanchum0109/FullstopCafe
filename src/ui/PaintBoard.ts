@@ -36,6 +36,15 @@ const SWATCHES = [
 
 type Tool = "brush" | "eraser" | "line" | "rect" | "ellipse" | "fill";
 
+type TransformKind = "flip-x" | "flip-y" | "rotate-cw" | "rotate-ccw";
+
+const TRANSFORM_LABELS: Record<TransformKind, string> = {
+  "flip-x": "已左右翻转",
+  "flip-y": "已上下翻转",
+  "rotate-cw": "已右转 90°",
+  "rotate-ccw": "已左转 90°",
+};
+
 const TOOLS: Array<{ value: Tool; label: string }> = [
   { value: "brush", label: "笔" },
   { value: "eraser", label: "橡皮" },
@@ -327,6 +336,16 @@ export class PaintBoard {
       this.button("清空", () => this.clear()),
     );
     tools.appendChild(toggles);
+
+    const transforms = document.createElement("div");
+    transforms.className = "paint__buttons";
+    transforms.append(
+      this.button("左右翻转", () => this.transform("flip-x")),
+      this.button("上下翻转", () => this.transform("flip-y")),
+      this.button("左转 90°", () => this.transform("rotate-ccw")),
+      this.button("右转 90°", () => this.transform("rotate-cw")),
+    );
+    tools.appendChild(transforms);
 
     const fillRow = document.createElement("div");
     fillRow.className = "paint__buttons";
@@ -668,6 +687,53 @@ export class PaintBoard {
     }
 
     context.putImageData(image, 0, 0);
+  }
+
+  // --- Transforms --------------------------------------------------------
+
+  /**
+   * Flip or quarter-turn the whole drawing in place.
+   *
+   * Undoable like any stroke, and it moves only the painting: the guide
+   * outline belongs to the piece, so it stays put and you can see how the
+   * turned image now lands on the shape.
+   */
+  private transform(kind: TransformKind): void {
+    if (!this.host.piece()) return;
+    this.pushHistory();
+
+    const width = this.paint.width;
+    const height = this.paint.height;
+    const backup = document.createElement("canvas");
+    backup.width = width;
+    backup.height = height;
+    backup.getContext("2d")?.drawImage(this.paint, 0, 0);
+
+    const context = this.context();
+    context.save();
+    context.globalCompositeOperation = "source-over";
+    context.clearRect(0, 0, width, height);
+
+    if (kind === "flip-x") {
+      context.setTransform(-1, 0, 0, 1, width, 0);
+      context.drawImage(backup, 0, 0);
+    } else if (kind === "flip-y") {
+      context.setTransform(1, 0, 0, -1, 0, height);
+      context.drawImage(backup, 0, 0);
+    } else {
+      // A quarter turn swaps the board's aspect, but the board's proportions
+      // are the piece's and cannot change. Scale the turned image down to the
+      // largest size that still fits rather than letting it run off the edges.
+      const fit = Math.min(width / height, height / width);
+      context.setTransform(1, 0, 0, 1, width / 2, height / 2);
+      context.rotate(kind === "rotate-cw" ? Math.PI / 2 : -Math.PI / 2);
+      context.scale(fit, fit);
+      context.drawImage(backup, -width / 2, -height / 2);
+    }
+
+    context.restore();
+    this.commit();
+    this.say(TRANSFORM_LABELS[kind]);
   }
 
   /** Flood the piece's outline with its current colour, as a base to paint on. */

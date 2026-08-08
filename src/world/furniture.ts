@@ -383,6 +383,20 @@ export class Furniture {
   }
 
   /** Lookup by id for AI / debug. */
+  /**
+   * Show or hide the whole set.
+   *
+   * Only the meshes go; the spots stay live, so an actor standing at the ops
+   * table keeps its anchor and does not jump when the furniture comes back.
+   */
+  setVisible(visible: boolean): void {
+    this.group.visible = visible;
+  }
+
+  get visible(): boolean {
+    return this.group.visible;
+  }
+
   getSpot(id: string): InteractionSpot | undefined {
     return this.spots.find((s) => s.id === id);
   }

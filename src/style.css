@@ -445,6 +445,16 @@ body {
   }
 }
 
+.hud__buttons {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.hud__buttons:empty {
+  display: none;
+}
+
 .hud__hint {
   margin-top: 8px;
   padding-top: 8px;

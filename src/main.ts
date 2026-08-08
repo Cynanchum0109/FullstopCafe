@@ -55,6 +55,13 @@ for (const actor of actors) scene.add(actor.object);
 const hud = new HUD(overlay, clock);
 const tuner = new RigTuner(overlay, actors, camera);
 
+// Furniture crowds the view when what you are checking is a character rig, so
+// the whole set can be dropped out without touching the room or the actors.
+const furnitureButton = hud.addButton("隐藏家具", () => {
+  furniture.setVisible(!furniture.visible);
+  furnitureButton.textContent = furniture.visible ? "隐藏家具" : "显示家具";
+});
+
 // --- Temporary phase-1 driver -------------------------------------------
 // Manual control exists only to validate the walk cycle and camera feel. The
 // utility AI replaces it in phase 2 and this block goes away.

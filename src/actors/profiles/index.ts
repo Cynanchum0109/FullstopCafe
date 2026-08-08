@@ -3,18 +3,23 @@ import type { RigSpec } from "../Rig";
 import { DEFAULT_PIECE, fringe, pair, type SurfacePiece } from "../SurfacePiece";
 
 /**
- * Per-character data. Appearance is drawn from `ref/`; personality weights are
- * still blank because the character bible has not landed yet -- they get added
- * here, as data, without touching any AI code.
+ * Per-character appearance data. Story, weapons, personality and home spots
+ * live in `docs/DESIGN.md` — do not reshape silhouettes without an explicit ask.
  *
- * These numbers are meant to be edited by the in-game rig tuner (press `~`) and
- * pasted back over the `spec` blocks below.
+ * Personality / utility weights will hang off this type later as plain numbers;
+ * the AI should only ever read data from here, not hard-code character names.
+ *
+ * Spec numbers are edited by the in-game rig tuner (press `~`) and pasted back
+ * over the blocks below.
  */
 export interface CharacterProfile {
   id: string;
   displayName: string;
   spec: Partial<RigSpec>;
-  /** Where they stand when the game first loads. */
+  /**
+   * Fallback spawn if furniture has no preferred spot for this id.
+   * Runtime prefers `Furniture.preferredSpotFor(id)` (see main.ts).
+   */
   spawn: { x: number; z: number };
 }
 
@@ -58,6 +63,7 @@ export const profiles: CharacterProfile[] = [
   {
     id: "heath",
     displayName: "Heath",
+    // Appearance only — lore/weapons/home: docs/DESIGN.md (sniper, naps on sofa).
     // Tallest. Black suit, white collar, brown hair in a 3:7 side part with a
     // long high ponytail. The part shows as a heavy sweep to one side and a
     // short remainder on the other.
@@ -116,6 +122,7 @@ export const profiles: CharacterProfile[] = [
   {
     id: "honglu",
     displayName: "Honglu",
+    // Appearance only — lore/weapons/home: docs/DESIGN.md (boss; pistol + knife).
     // Dark coat, almost no contrast. The short high ponytail and the fringe
     // falling across one eye are the whole silhouette, plus a teal hair tie as
     // the single spot of colour.
@@ -185,6 +192,7 @@ export const profiles: CharacterProfile[] = [
   {
     id: "sinclair",
     displayName: "Sinclair",
+    // Appearance only — lore/weapons/home: docs/DESIGN.md (SMG; ops table studious).
     // Shortest of the three. Soft blonde hair with no tail, so the head reads
     // as one round mass; olive field gear.
     spec: {

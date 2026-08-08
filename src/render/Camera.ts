@@ -2,6 +2,8 @@ import * as THREE from "three";
 
 /** Elevation of the camera above the floor plane, in radians. */
 const ELEVATION = THREE.MathUtils.degToRad(34);
+/** Azimuth of the room-wide view, in radians. */
+const HOME_AZIMUTH = Math.PI / 4;
 /** Distance from the orbit target. Orthographic, so this only affects clipping. */
 const ORBIT_RADIUS = 30;
 /** Half-height of the orthographic frustum at zoom 1, in world units. */
@@ -15,12 +17,19 @@ const SMOOTHING = 9;
 /** How far the view may be panned from the middle of the room, in world units. */
 const PAN_LIMIT = 4;
 
+/** Wrap an angle difference into -pi..pi. */
+function shortestAngle(delta: number): number {
+  return ((((delta + Math.PI) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) - Math.PI;
+}
+
 /**
  * Orthographic isometric camera at a fixed angle.
  *
- * The view never rotates: the cutaway room only has two walls, and turning past
- * them shows the room from behind its own missing walls. Dragging pans instead,
- * which is what you actually want when the room is bigger than the screen.
+ * Normal play never rotates the view: the cutaway room only has two walls, and
+ * turning past them shows the room from behind its own missing walls. Dragging
+ * pans instead, which is what you actually want when the room is bigger than
+ * the screen. The rig tuner is the one exception -- it aims the camera at a
+ * single character, where the walls are out of frame anyway.
  */
 export class IsoCamera {
   readonly camera: THREE.OrthographicCamera;
@@ -31,7 +40,10 @@ export class IsoCamera {
   private readonly desiredTarget = new THREE.Vector3(0, 0.5, 0);
   private homeZoom = 1;
 
-  private readonly azimuth = Math.PI / 4;
+  private azimuth = HOME_AZIMUTH;
+  private desiredAzimuth = HOME_AZIMUTH;
+  private elevation = ELEVATION;
+  private desiredElevation = ELEVATION;
   private zoom = 1;
   private targetZoom = 1;
 
@@ -67,7 +79,12 @@ export class IsoCamera {
     this.desiredTarget
       .addScaledVector(this.panRight, -dx * worldPerPixel)
       // Dragging down should pull the far end of the room toward the viewer.
-      .addScaledVector(this.panForward, -dy * worldPerPixel / Math.cos(ELEVATION));
+      // Near-horizontal views squash the floor to nothing; clamp so a drag
+      // downward cannot fling the target across the room.
+      .addScaledVector(
+        this.panForward,
+        (-dy * worldPerPixel) / Math.max(Math.cos(this.elevation), 0.2),
+      );
 
     this.desiredTarget.x = THREE.MathUtils.clamp(
       this.desiredTarget.x,
@@ -97,6 +114,25 @@ export class IsoCamera {
     this.targetZoom = THREE.MathUtils.clamp(zoom, MIN_ZOOM, MAX_ZOOM);
   }
 
+  /**
+   * Swing the camera to an arbitrary angle. Used by the rig tuner to look a
+   * character straight in the face; `elevation` 0 is dead level with it.
+   */
+  setOrientation(azimuth: number, elevation: number): void {
+    this.desiredAzimuth = azimuth;
+    this.desiredElevation = THREE.MathUtils.clamp(
+      elevation,
+      0,
+      Math.PI / 2 - 0.01,
+    );
+  }
+
+  /** Return to the fixed isometric angle. */
+  clearOrientation(): void {
+    this.desiredAzimuth = HOME_AZIMUTH;
+    this.desiredElevation = ELEVATION;
+  }
+
   /** Return to the room-wide view. */
   clearFocus(): void {
     this.desiredTarget.copy(this.homeTarget);
@@ -116,6 +152,11 @@ export class IsoCamera {
     const t = 1 - Math.exp(-SMOOTHING * delta);
     this.zoom += (this.targetZoom - this.zoom) * t;
     this.target.lerp(this.desiredTarget, t);
+    // Take the short way round, so a swing past due north does not unwind
+    // the long way through the back of the room.
+    const turn = shortestAngle(this.desiredAzimuth - this.azimuth);
+    this.azimuth += turn * t;
+    this.elevation += (this.desiredElevation - this.elevation) * t;
     this.applyFrustum();
     this.applyTransform();
   }
@@ -161,10 +202,10 @@ export class IsoCamera {
   }
 
   private applyTransform(): void {
-    const horizontal = Math.cos(ELEVATION) * ORBIT_RADIUS;
+    const horizontal = Math.cos(this.elevation) * ORBIT_RADIUS;
     this.camera.position.set(
       this.target.x + Math.sin(this.azimuth) * horizontal,
-      this.target.y + Math.sin(ELEVATION) * ORBIT_RADIUS,
+      this.target.y + Math.sin(this.elevation) * ORBIT_RADIUS,
       this.target.z + Math.cos(this.azimuth) * horizontal,
     );
     this.camera.lookAt(this.target);

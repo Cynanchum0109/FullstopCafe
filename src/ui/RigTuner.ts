@@ -23,6 +23,8 @@ import { PaintBoard } from "./PaintBoard";
 export interface TunerCamera {
   focusOn(x: number, y: number, z: number, zoom: number): void;
   clearFocus(): void;
+  setOrientation(azimuth: number, elevation: number): void;
+  clearOrientation(): void;
 }
 
 /**
@@ -158,6 +160,7 @@ export class RigTuner {
       this.paint?.refresh();
     } else {
       this.camera.clearFocus();
+      this.camera.clearOrientation();
     }
     // Adds or removes the selection cage.
     this.rebuild();
@@ -775,6 +778,10 @@ export class RigTuner {
   private focusCurrent(): void {
     const { x, z } = this.current.position;
     this.camera.focusOn(x, this.current.rig.height * 0.55, z, 2.2);
+    // Head-on and dead level: the rig faces -Z at yaw 0, so the camera has to
+    // stand half a turn round from wherever the actor is looking. Snapped once
+    // on open, not tracked -- the yaw slider still turns the model in place.
+    this.camera.setOrientation(this.current.yaw + Math.PI, 0);
     this.syncYaw();
   }
 

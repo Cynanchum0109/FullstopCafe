@@ -326,10 +326,33 @@ body {
   cursor: pointer;
 }
 
+.paint__toolgrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin-bottom: 5px;
+}
+
 .paint__buttons {
   display: flex;
   gap: 4px;
   margin-top: 5px;
+}
+
+.tuner__button.is-active {
+  background: rgba(127, 231, 255, 0.24);
+  border-color: rgba(127, 231, 255, 0.6);
+}
+
+.tuner__text {
+  width: 100%;
+  padding: 2px 5px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.35);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
 }
 
 .paint__buttons .tuner__button {

@@ -176,6 +176,7 @@ export const PIECE_SHAPES = [
 ] as const;
 
 export const PIECE_COLORS = [
+  { value: "none", label: "完全透明" },
   { value: "hair", label: "头发" },
   { value: "hairShade", label: "暗部" },
   { value: "hairTie", label: "发圈" },

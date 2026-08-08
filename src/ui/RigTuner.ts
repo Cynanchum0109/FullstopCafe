@@ -56,7 +56,6 @@ export class RigTuner {
   private yawValue: HTMLSpanElement | undefined;
   private paint: PaintBoard | undefined;
   private refreshPieceList: (() => void) | undefined;
-  private refreshShapeEnabled: (() => void) | undefined;
 
   constructor(
     container: HTMLElement,
@@ -110,6 +109,7 @@ export class RigTuner {
     // be dragged and resized freely.
     this.paint = new PaintBoard({
       piece: () => this.piece(),
+      spec: () => this.spec(),
       rebuild: () => {
         this.rebuild();
         this.refreshPieceList?.();
@@ -291,6 +291,7 @@ export class RigTuner {
     section.appendChild(
       this.pieceDropdown("color", "颜色", PIECE_COLORS, refreshList),
     );
+    section.appendChild(this.noteInput(refreshList));
     section.appendChild(this.textureDropdown());
 
     const paintRow = document.createElement("div");
@@ -309,11 +310,38 @@ export class RigTuner {
     return section;
   }
 
-  /**
-   * Texture selector. Picking one flips the piece into card mode, where the
-   * shape dropdown no longer does anything -- so it gets disabled, rather than
-   * silently ignored.
-   */
+  /** Free-text label for a piece. A head of twenty "发绺·头发·82°" is unusable. */
+  private noteInput(onChange: () => void): HTMLElement {
+    const row = document.createElement("label");
+    row.className = "tuner__row";
+
+    const name = document.createElement("span");
+    name.className = "tuner__label";
+    name.textContent = "备注名";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "tuner__text";
+    input.placeholder = "左刘海…";
+
+    input.addEventListener("input", () => {
+      const piece = this.piece();
+      if (!piece) return;
+      if (input.value.trim()) piece.note = input.value.trim();
+      else delete piece.note;
+      onChange();
+    });
+
+    row.append(name, input);
+    this.inputs.push(() => {
+      const piece = this.piece();
+      input.disabled = !piece;
+      input.value = piece?.note ?? "";
+    });
+    return row;
+  }
+
+  /** Texture selector. The image paints the piece's faces; the shape stays. */
   private textureDropdown(): HTMLElement {
     const row = document.createElement("label");
     row.className = "tuner__row";
@@ -347,7 +375,6 @@ export class RigTuner {
       else delete piece.texture;
       this.rebuild();
       this.paint?.refresh();
-      this.refreshShapeEnabled?.();
     });
 
     row.append(name, select);
@@ -481,15 +508,11 @@ export class RigTuner {
     });
 
     row.append(name, select);
-    const refresh = () => {
+    this.inputs.push(() => {
       const piece = this.piece();
-      // A textured piece takes its silhouette from the image's alpha, so the
-      // outline preset genuinely has no effect and should look inert.
-      select.disabled = !piece || (key === "shape" && Boolean(piece.texture));
+      select.disabled = !piece;
       if (piece) select.value = piece[key];
-    };
-    if (key === "shape") this.refreshShapeEnabled = refresh;
-    this.inputs.push(refresh);
+    });
     return row;
   }
 
@@ -678,14 +701,17 @@ function copySpec(spec: RigSpec): RigSpec {
   return { ...spec, pieces: spec.pieces.map((piece) => ({ ...piece })) };
 }
 
-/** Short human label for a piece in the list, e.g. "发绺 · 头发 · 82°". */
+/** Label for a piece in the list: its note if it has one, else what it is. */
 function labelFor(piece: SurfacePiece): string {
+  const degrees = Math.round((piece.azimuth * 180) / Math.PI);
+  if (piece.note) return `${piece.note} · ${degrees}°`;
+
   const shape =
     PIECE_SHAPES.find((s) => s.value === piece.shape)?.label ?? piece.shape;
   const color =
     PIECE_COLORS.find((c) => c.value === piece.color)?.label ?? piece.color;
-  const degrees = Math.round((piece.azimuth * 180) / Math.PI);
-  return `${shape} · ${color} · ${degrees}°`;
+  const mark = piece.texture ? "🖌 " : "";
+  return `${mark}${shape} · ${color} · ${degrees}°`;
 }
 
 function format(value: number): string {

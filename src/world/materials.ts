@@ -50,35 +50,53 @@ export function box(
 }
 
 /**
- * Material for an alpha-cut texture card.
+ * Material for a painted piece.
+ *
+ * `color` stays white so the map shows exactly the colours that were painted.
+ * Tinting a greyscale card would be more reusable, but it would also make every
+ * colour choice on the paint board meaningless.
  *
  * `alphaTest` rather than `transparent`: transparency needs back-to-front
- * sorting, and a head carrying twenty overlapping hair cards flickers badly
- * when the camera moves. Discarding pixels below a threshold sidesteps sorting
- * entirely at the cost of hard edges, which suits this art style anyway.
- *
- * `color` tints the map, so cards can be drawn in greyscale once and reused
- * across characters with different hair colours.
+ * sorting, and a head carrying twenty overlapping pieces flickers badly when
+ * the camera moves. Discarding pixels below a threshold sidesteps sorting
+ * entirely at the cost of hard edges, which suits this art style anyway. It
+ * also means unpainted areas cut holes in the piece, so a partly painted
+ * canvas trims the shape as well as colouring it.
  */
 const cardCache = new Map<string, THREE.MeshLambertMaterial>();
 
-export function cardMaterial(
-  texture: THREE.Texture,
-  tint: number,
-): THREE.MeshLambertMaterial {
-  const key = `${texture.uuid}:${tint}`;
-  const existing = cardCache.get(key);
+export function cardMaterial(texture: THREE.Texture): THREE.MeshLambertMaterial {
+  const existing = cardCache.get(texture.uuid);
   if (existing) return existing;
 
   const material = new THREE.MeshLambertMaterial({
     map: texture,
-    color: tint,
+    color: 0xffffff,
     alphaTest: 0.5,
     transparent: false,
     side: THREE.DoubleSide,
+    flatShading: true,
   });
-  cardCache.set(key, material);
+  cardCache.set(texture.uuid, material);
   return material;
+}
+
+/**
+ * Fully transparent, casts nothing, writes no depth.
+ *
+ * Used by pieces set to the "none" colour: they stay in the list, keep their
+ * shape and stay selectable, but draw nothing. Handy for blocking out a shape
+ * you only intend to paint, and for hiding a piece without deleting it.
+ */
+let invisible: THREE.MeshBasicMaterial | undefined;
+
+export function invisibleMaterial(): THREE.MeshBasicMaterial {
+  invisible ??= new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  });
+  return invisible;
 }
 
 /**

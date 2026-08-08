@@ -11,6 +11,14 @@ import * as THREE from "three";
 const STORAGE_KEY = "fsc.paintedTextures.v1";
 const STORAGE_VERSION = 1;
 
+/**
+ * Fixed and small. A head can carry twenty painted pieces and three characters
+ * share the scene, so every texture is a GPU upload and a localStorage entry
+ * that has to stay cheap. At the size these read on screen, 64 is plenty --
+ * and a fixed value means the paint board never has to resample anything.
+ */
+export const PAINT_RESOLUTION = 64;
+
 export interface TextureEntry {
   id: string;
   label: string;
@@ -86,25 +94,12 @@ export function markDirty(id: string): void {
 }
 
 /** Create a blank painted texture and return its id. */
-export function createPainted(resolution: number, id?: string): string {
+export function createPainted(id?: string): string {
   const key = id ?? `paint:${Date.now().toString(36)}`;
   const canvas = document.createElement("canvas");
-  canvas.width = resolution;
-  canvas.height = resolution;
+  canvas.width = PAINT_RESOLUTION;
+  canvas.height = PAINT_RESOLUTION;
   registerCanvas(key, canvas);
-  return key;
-}
-
-/** Copy an existing texture's pixels into a new painted one, for editing. */
-export function forkTexture(sourceId: string, resolution: number): string {
-  const key = createPainted(resolution);
-  const target = painted.get(key);
-  const source = painted.get(sourceId)?.canvas;
-  if (target && source) {
-    const context = target.canvas.getContext("2d");
-    context?.drawImage(source, 0, 0, target.canvas.width, target.canvas.height);
-    markDirty(key);
-  }
   return key;
 }
 

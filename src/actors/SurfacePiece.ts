@@ -21,6 +21,8 @@ export type PieceShape =
 
 /** Which colour from the rig spec a piece paints itself with. */
 export type PieceColor =
+  /** Draws nothing. The piece keeps its shape and stays selectable. */
+  | "none"
   | "hair"
   | "hairShade"
   | "hairTie"
@@ -34,6 +36,8 @@ export type PieceColor =
 export interface SurfacePiece {
   shape: PieceShape;
   color: PieceColor;
+  /** Optional label, so a head full of pieces stays navigable. */
+  note?: string;
 
   // --- Placement on the head sphere ---
   /** Angle around the head. 0 is dead ahead, positive turns to the left. */
@@ -66,15 +70,16 @@ export interface SurfacePiece {
   thickness: number;
 
   /**
-   * Id of a texture from `textures.ts`. When set, the outline stops mattering:
-   * the piece becomes a plain rectangle and the image's alpha decides the
-   * silhouette. Two competing outlines clipping each other is unworkable to
-   * tune, so exactly one of them is in charge at a time.
+   * Id of a texture from `textures.ts`, painted straight onto the piece's own
+   * faces. The outline still decides the shape; the image supplies the colour.
    */
   texture?: string;
   /**
-   * How much larger the textured card is than the outline's bounding box.
-   * The margin is what lets painted strokes spill past the original shape.
+   * How much larger the paint canvas is than the outline's bounding box.
+   *
+   * The margin is dead space as far as texturing goes -- there is no geometry
+   * out there to paint on -- but it is what gives you room to draw a shape
+   * bigger than the current outline before tracing it into a new one.
    */
   pad: number;
 
@@ -297,6 +302,8 @@ export function outlinePoints(piece: SurfacePiece): THREE.Vector2[] {
 /** Resolve a piece's colour slot against the character's palette. */
 export function pieceColor(slot: PieceColor, spec: RigSpec): number {
   switch (slot) {
+    case "none":
+      return 0x000000;
     case "hair":
       return spec.hair;
     case "hairShade":
@@ -353,46 +360,64 @@ export function buildPiece(
 }
 
 /**
- * Geometry for a piece, in one of three forms:
- *
- * - textured: a plain rectangle covering `cardBounds`, UVs 0..1, so the image
- *   maps onto it one to one and its alpha supplies the silhouette
- * - zero thickness: a single flat face, no sides
- * - otherwise: the outline extruded into a slab
+ * Geometry for a piece: the outline, flat when thickness is zero and extruded
+ * otherwise. A texture does not change any of this -- it paints the faces of
+ * whatever shape is already there.
  */
 function pieceGeometry(piece: SurfacePiece): THREE.BufferGeometry {
-  if (piece.texture) {
-    const bounds = cardBounds(piece);
-    const geometry = new THREE.PlaneGeometry(
-      bounds.maxX - bounds.minX,
-      bounds.maxY - bounds.minY,
-    );
-    geometry.translate(
-      (bounds.minX + bounds.maxX) / 2,
-      (bounds.minY + bounds.maxY) / 2,
-      0,
-    );
-    return geometry;
-  }
-
   const shape = outline(piece);
   // Curves only exist on `leaf` and `round`; everything else is straight edges
   // and extra segments would just cost vertices.
   const curveSegments = piece.shape === "leaf" || piece.shape === "round" ? 8 : 1;
 
-  if (piece.thickness < 0.002) {
-    return new THREE.ShapeGeometry(shape, curveSegments);
+  const geometry =
+    piece.thickness < 0.002
+      ? new THREE.ShapeGeometry(shape, curveSegments)
+      : new THREE.ExtrudeGeometry(shape, {
+          depth: piece.thickness,
+          bevelEnabled: false,
+          curveSegments,
+        });
+
+  if (piece.thickness >= 0.002) {
+    // Extrude grows along +Z from the outline plane; recentre it so `lift`
+    // means the same thing whatever the thickness is.
+    geometry.translate(0, 0, -piece.thickness / 2);
   }
 
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth: piece.thickness,
-    bevelEnabled: false,
-    curveSegments,
-  });
-  // Extrude grows along +Z from the outline plane; recentre it so `lift` means
-  // the same thing whatever the thickness is.
-  geometry.translate(0, 0, -piece.thickness / 2);
+  if (piece.texture) applyPlanarUVs(geometry, cardBounds(piece));
   return geometry;
+}
+
+/**
+ * Re-project UVs so the paint canvas lands on the piece exactly where it was
+ * drawn.
+ *
+ * Both `ShapeGeometry` and `ExtrudeGeometry` emit UVs straight from vertex x,y
+ * in local units, which are metres here and so far outside 0..1 that the
+ * texture tiles into a smear. Mapping x,y through the same rectangle the paint
+ * board uses puts every pixel back where you put it. Side faces get the same
+ * planar projection, which streaks slightly -- invisible on slabs this thin.
+ */
+function applyPlanarUVs(
+  geometry: THREE.BufferGeometry,
+  bounds: { minX: number; maxX: number; minY: number; maxY: number },
+): void {
+  const position = geometry.getAttribute("position");
+  const uv = geometry.getAttribute("uv");
+  if (!position || !uv) return;
+
+  const spanX = bounds.maxX - bounds.minX || 1;
+  const spanY = bounds.maxY - bounds.minY || 1;
+
+  for (let i = 0; i < position.count; i++) {
+    uv.setXY(
+      i,
+      (position.getX(i) - bounds.minX) / spanX,
+      (position.getY(i) - bounds.minY) / spanY,
+    );
+  }
+  uv.needsUpdate = true;
 }
 
 // --- Authoring helpers ---------------------------------------------------

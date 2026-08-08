@@ -28,15 +28,47 @@ Then open http://localhost:5173.
 Fringe, side locks, eyes and blush are **surface pieces**: a small 2D outline
 (`THREE.Shape`) extruded to a thin slab (`ExtrudeGeometry`, no bevel), then
 placed on the head sphere by azimuth and elevation with three axes of local
-rotation on top. Six outline presets — rectangle, trapezoid, triangle, hair
-lock, spike, disc — each parameterised by width, length, taper and tip skew.
+rotation on top. Outline presets — rectangle, trapezoid, triangle, hair lock,
+spike, leaf, ellipse, disc, plus `custom` for hand-traced ones — each
+parameterised by width, length, taper and tip skew. Thickness can go to zero
+for a single flat face.
 
-Three or four vertices per piece, so a whole head of them stays cheap, and any
-shape you can describe with those numbers is available without touching code.
+A few vertices per piece, so a whole head of them stays cheap, and any shape
+you can describe with those numbers is available without touching code.
 
 The one thing to know: a piece hangs *tangentially* along the skull, so its
 `length` is an arc. Starting a fringe at the brow instead of at the hairline
 sends it sweeping straight past the eyes and down to the chin.
+
+## Paint board
+
+Press `` ` ``, select a piece, then **🖌 打开画板**. A resizable floating panel
+with a fixed 64px canvas; the piece's outline is projected onto it as a guide.
+
+Tools: brush, eraser, line, filled rect, filled ellipse, flood fill, left-right
+mirror, undo, clear, and **填满轮廓** which floods the guide outline with the
+piece's own colour as a base to paint over.
+
+What the drawing is *for* is a separate decision, and this is the important
+part:
+
+| Button | Effect |
+|---|---|
+| **用作贴图** | The image is painted onto the piece's existing faces, in the colours you painted. The shape does not change. |
+| **生成形状** | The old outline is thrown away and the painted alpha is traced into a new one, which extrudes like any other shape. |
+
+Material `color` stays white so painted colours appear as-is — tinting greyscale
+art would be more reusable but would make every colour choice on the board
+meaningless. `alphaTest` means unpainted areas cut holes, so a partly painted
+canvas trims the shape as well as colouring it.
+
+UVs are re-projected through the same rectangle the board uses. `ShapeGeometry`
+and `ExtrudeGeometry` emit UVs straight from vertex x,y in metres, which tile
+into a smear; the remap puts every pixel back where you drew it.
+
+Painted textures persist to localStorage (**保存**) and can be downloaded as
+PNGs (**导出 PNG**). Any PNG dropped into `src/assets/hair/` also shows up in
+the texture dropdown, no code change needed.
 
 ## Rig tuner
 

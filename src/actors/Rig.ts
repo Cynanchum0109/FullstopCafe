@@ -7,6 +7,7 @@ import {
   flatMaterialDouble,
   cardMaterial,
   cardDepthMaterial,
+  invisibleMaterial,
 } from "../world/materials";
 import { getTexture } from "./textures";
 import {
@@ -335,9 +336,16 @@ export class Rig {
     pieceRoot.position.y = centre;
     head.add(pieceRoot);
     s.pieces.forEach((piece, index) => {
-      const tint = pieceColor(piece.color, s);
       const texture = piece.texture ? getTexture(piece.texture) : undefined;
-      const material = texture ? cardMaterial(texture, tint) : flatMaterial(tint);
+      // A piece can be invisible and still be selectable and editable, which is
+      // how you scaffold a shape you only ever intend to paint.
+      // An invisible material rather than `visible = false`, so the selection
+      // outline -- which hangs off the mesh -- still draws.
+      const material = texture
+        ? cardMaterial(texture)
+        : piece.color === "none"
+          ? invisibleMaterial()
+          : flatMaterial(pieceColor(piece.color, s));
       const node = buildPiece(piece, s.headRadius, material);
 
       if (texture) {

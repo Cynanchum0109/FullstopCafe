@@ -39,13 +39,14 @@ const actors = profiles.map(
 for (const actor of actors) scene.add(actor.object);
 
 const hud = new HUD(overlay, clock);
-new RigTuner(overlay, actors, camera);
+const tuner = new RigTuner(overlay, actors, camera);
 
 // --- Temporary phase-1 driver -------------------------------------------
 // Manual control exists only to validate the walk cycle and camera feel. The
 // utility AI replaces it in phase 2 and this block goes away.
 const keys = new Set<string>();
-const driven = actors[0];
+/** WASD drives whoever is selected. Reassigned by the `actor:clicked` handler. */
+let driven = actors[0];
 
 window.addEventListener("keydown", (event) => {
   keys.add(event.key.toLowerCase());
@@ -119,7 +120,13 @@ canvas.addEventListener("click", (event) => {
 
 events.on("actor:clicked", ({ actorId }) => {
   const actor = actors.find((candidate) => candidate.id === actorId);
-  hud.setFocus(actor ? actor.displayName : "-");
+  if (!actor) return;
+  hud.setFocus(actor.displayName);
+  // One selection concept: clicking in the 3D view, or picking a tab in the
+  // tuner, both point the camera, the HUD and the WASD driver at the same actor.
+  driven?.stop();
+  driven = actor;
+  tuner.select(actor);
 });
 events.on("world:clicked", () => hud.setFocus("-"));
 

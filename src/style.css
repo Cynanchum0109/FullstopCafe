@@ -201,6 +201,12 @@ body {
   font-size: 11px;
 }
 
+.tuner__row--turntable {
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
 .tuner__footer {
   display: flex;
   gap: 6px;

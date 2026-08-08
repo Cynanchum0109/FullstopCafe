@@ -1,4 +1,5 @@
 import type { Actor } from "../actors/Actor";
+import { events } from "../core/Events";
 import { DEFAULT_RIG_SPEC, type RigSpec } from "../actors/Rig";
 import {
   PIECE_COLORS,
@@ -41,12 +42,16 @@ export class RigTuner {
 
   /** Working copy per actor, seeded from whatever they were built with. */
   private readonly specs = new Map<string, RigSpec>();
+  /** Untouched copy of each actor's authored look, for the reset button. */
+  private readonly baselines = new Map<string, RigSpec>();
   private current: Actor;
   private open = false;
   /** Rebuilt on every actor switch, so sliders show the right values. */
   private inputs: Array<() => void> = [];
   /** Index into the current spec's `pieces`, or -1 when none is selected. */
   private pieceIndex = 0;
+  private yawInput: HTMLInputElement | undefined;
+  private yawValue: HTMLSpanElement | undefined;
 
   constructor(
     container: HTMLElement,
@@ -59,10 +64,8 @@ export class RigTuner {
     for (const actor of actors) {
       // Deep-copy the piece list: the working copy must not alias the array the
       // profile module exports, or editing one character mutates the source.
-      this.specs.set(actor.id, {
-        ...actor.rig.spec,
-        pieces: actor.rig.spec.pieces.map((piece) => ({ ...piece })),
-      });
+      this.specs.set(actor.id, copySpec(actor.rig.spec));
+      this.baselines.set(actor.id, copySpec(actor.rig.spec));
     }
 
     this.root = document.createElement("div");
@@ -82,13 +85,12 @@ export class RigTuner {
     this.body.className = "tuner__body";
     this.root.appendChild(this.body);
 
+    // The camera snaps to fixed corners, so turning the character is the only
+    // way to inspect a profile or the back of the head.
+    this.root.appendChild(this.buildYawRow());
+
     const footer = document.createElement("div");
     footer.className = "tuner__footer";
-    footer.appendChild(
-      // The camera snaps to fixed corners, so spinning the character is the
-      // only way to inspect the face.
-      this.button("转 45°", () => this.current.setYaw(this.current.yaw + Math.PI / 4)),
-    );
     footer.appendChild(this.button("复制 spec", () => this.copySpec()));
     footer.appendChild(this.button("重置", () => this.reset()));
     this.root.appendChild(footer);
@@ -115,6 +117,17 @@ export class RigTuner {
     else this.camera.clearFocus();
   }
 
+  /** Point the tuner at an actor. Safe to call whether or not the panel is open. */
+  select(actor: Actor): void {
+    if (actor === this.current) return;
+    this.current = actor;
+    this.pieceIndex = 0;
+    this.buildTabs();
+    this.buildControls();
+    if (this.open) this.focusCurrent();
+    else this.syncYaw();
+  }
+
   private buildTabs(): void {
     this.tabs.replaceChildren();
     for (const actor of this.actors) {
@@ -123,11 +136,10 @@ export class RigTuner {
       tab.className =
         actor.id === this.current.id ? "tuner__tab tuner__tab--on" : "tuner__tab";
       tab.addEventListener("click", () => {
-        this.current = actor;
-        this.pieceIndex = 0;
-        this.buildTabs();
-        this.buildControls();
-        this.focusCurrent();
+        this.select(actor);
+        // Same event a click in the 3D view raises, so selection stays one
+        // concept: the HUD and the WASD driver both follow it.
+        events.emit("actor:clicked", { actorId: actor.id });
       });
       this.tabs.appendChild(tab);
     }
@@ -255,6 +267,52 @@ export class RigTuner {
     }
 
     return section;
+  }
+
+  /**
+   * Turntable for the selected character. Lives outside `buildControls` so it
+   * survives actor switches, and reads the actor's yaw back each frame the
+   * panel is open -- otherwise walking around would desync the handle.
+   */
+  private buildYawRow(): HTMLElement {
+    const row = document.createElement("label");
+    row.className = "tuner__row tuner__row--turntable";
+
+    const name = document.createElement("span");
+    name.className = "tuner__label";
+    name.textContent = "转身";
+
+    const input = document.createElement("input");
+    input.type = "range";
+    input.min = "-180";
+    input.max = "180";
+    input.step = "1";
+    input.value = "0";
+
+    const value = document.createElement("span");
+    value.className = "tuner__value";
+    value.textContent = "0°";
+
+    input.addEventListener("input", () => {
+      const degrees = Number(input.value);
+      value.textContent = `${degrees}°`;
+      this.current.setYaw((degrees * Math.PI) / 180);
+    });
+
+    this.yawInput = input;
+    this.yawValue = value;
+    row.append(name, input, value);
+    return row;
+  }
+
+  /** Pull the handle back in line with the actor. Called when focus changes. */
+  private syncYaw(): void {
+    if (!this.yawInput || !this.yawValue) return;
+    let degrees = Math.round((this.current.yaw * 180) / Math.PI);
+    while (degrees > 180) degrees -= 360;
+    while (degrees < -180) degrees += 360;
+    this.yawInput.value = String(degrees);
+    this.yawValue.textContent = `${degrees}°`;
   }
 
   private piece(): SurfacePiece | undefined {
@@ -440,15 +498,19 @@ export class RigTuner {
     this.current.applySpec(this.spec());
   }
 
+  /**
+   * Back to the character's authored look, not to `DEFAULT_RIG_SPEC` -- that
+   * default carries Heath's colours, so resetting anyone else used to repaint
+   * them brown.
+   */
   private reset(): void {
-    this.specs.set(this.current.id, {
-      ...DEFAULT_RIG_SPEC,
-      pieces: DEFAULT_RIG_SPEC.pieces.map((piece) => ({ ...piece })),
-    });
+    const baseline = this.baselines.get(this.current.id);
+    if (!baseline) return;
+    this.specs.set(this.current.id, copySpec(baseline));
     this.pieceIndex = 0;
     this.buildControls();
     this.rebuild();
-    this.say("已重置为默认值");
+    this.say(`已还原 ${this.current.displayName} 的初始设定`);
   }
 
   /**
@@ -501,6 +563,7 @@ export class RigTuner {
   private focusCurrent(): void {
     const { x, z } = this.current.position;
     this.camera.focusOn(x, this.current.rig.height * 0.55, z, 2.2);
+    this.syncYaw();
   }
 
   private say(message: string): void {
@@ -509,6 +572,11 @@ export class RigTuner {
       if (this.status.textContent === message) this.status.textContent = "";
     }, 2600);
   }
+}
+
+/** Clone a spec, including the piece array, so edits never alias the source. */
+function copySpec(spec: RigSpec): RigSpec {
+  return { ...spec, pieces: spec.pieces.map((piece) => ({ ...piece })) };
 }
 
 /** Short human label for a piece in the list, e.g. "发绺 · 头发 · 82°". */

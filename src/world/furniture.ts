@@ -193,7 +193,7 @@ export class Furniture {
         kind: "stand",
         position: new THREE.Vector3(x + s.dx, 0, z + s.dz),
         yaw: s.yaw,
-        preferredActorId: s.preferred,
+        ...(s.preferred ? { preferredActorId: s.preferred } : {}),
       });
     }
   }

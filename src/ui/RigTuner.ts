@@ -1,16 +1,16 @@
 import type { Actor } from "../actors/Actor";
 import { events } from "../core/Events";
-import { DEFAULT_RIG_SPEC, type RigSpec } from "../actors/Rig";
+import type { RigSpec } from "../actors/Rig";
 import {
   PIECE_COLORS,
   PIECE_CONTROLS,
   PIECE_SHAPES,
   RIG_COLOR_CONTROLS,
   RIG_CONTROL_GROUPS,
-  TUNABLE_KEYS,
   type NumberControl,
   type PieceControl,
 } from "../actors/rigControls";
+import { bundleFilename, download, exportBundle, importBundle } from "../actors/bundle";
 import {
   DEFAULT_PIECE,
   mirrored,
@@ -56,6 +56,7 @@ export class RigTuner {
   private yawValue: HTMLSpanElement | undefined;
   private paint: PaintBoard | undefined;
   private refreshPieceList: (() => void) | undefined;
+  private readonly fileInput: HTMLInputElement;
 
   constructor(
     container: HTMLElement,
@@ -95,9 +96,24 @@ export class RigTuner {
 
     const footer = document.createElement("div");
     footer.className = "tuner__footer";
-    footer.appendChild(this.button("复制 spec", () => this.copySpec()));
+    footer.appendChild(this.button("导出存档", () => this.exportAll()));
+    footer.appendChild(this.button("导入存档", () => this.fileInput.click()));
     footer.appendChild(this.button("重置", () => this.reset()));
     this.root.appendChild(footer);
+
+    // Hidden file picker: a styled button is nicer than a bare input, and the
+    // input has to live in the DOM for the click to register.
+    this.fileInput = document.createElement("input");
+    this.fileInput.type = "file";
+    this.fileInput.accept = ".zip,application/zip";
+    this.fileInput.hidden = true;
+    this.fileInput.addEventListener("change", () => {
+      const file = this.fileInput.files?.[0];
+      if (file) void this.importAll(file);
+      // Clear it, or picking the same file twice in a row does nothing.
+      this.fileInput.value = "";
+    });
+    this.root.appendChild(this.fileInput);
 
     this.status = document.createElement("div");
     this.status.className = "tuner__status";
@@ -636,49 +652,53 @@ export class RigTuner {
   }
 
   /**
-   * Emit only the fields that differ from the default, formatted as the `spec`
-   * object in `profiles/index.ts`. Colours come out as hex so they stay
-   * readable when pasted.
+   * Download every character's spec plus every painted texture as one zip.
+   *
+   * Whole session rather than the selected character: pieces reference textures
+   * by id, so a spec on its own is only half the work.
    */
-  private async copySpec(): Promise<void> {
-    const spec = this.spec();
-    const lines: string[] = [];
-    for (const key of TUNABLE_KEYS) {
-      if (key === "pieces") continue;
-      const value = spec[key];
-      if (value === DEFAULT_RIG_SPEC[key]) continue;
-      if (typeof value === "number") {
-        const isColor = RIG_COLOR_CONTROLS.some((c) => c.key === key);
-        lines.push(`  ${key}: ${isColor ? toHexLiteral(value) : round(value)},`);
-      } else {
-        lines.push(`  ${key}: ${value},`);
-      }
-    }
-    // Pieces always ship in full: they are an array, so "differs from default"
-    // is not a useful question to ask of them.
-    lines.push(`  pieces: [`);
-    for (const piece of spec.pieces) {
-      const fields = Object.entries(piece)
-        .map(([key, value]) =>
-          typeof value === "number"
-            ? `${key}: ${round(value)}`
-            : `${key}: ${JSON.stringify(value)}`,
-        )
-        .join(", ");
-      lines.push(`    { ${fields} },`);
-    }
-    lines.push(`  ],`);
-
-    const text = `spec: {\n${lines.join("\n")}\n},`;
-
+  private async exportAll(): Promise<void> {
     try {
-      await navigator.clipboard.writeText(text);
-      this.say(`已复制 ${this.current.displayName} 的 spec（含 ${spec.pieces.length} 个部件）`);
-    } catch {
-      // Clipboard needs a secure context and a user gesture; the console is a
-      // reliable fallback and just as easy to copy from.
-      console.log(text);
-      this.say("剪贴板不可用，spec 已打印到 console");
+      const characters: Record<string, RigSpec> = {};
+      for (const actor of this.actors) {
+        const spec = this.specs.get(actor.id);
+        if (spec) characters[actor.id] = spec;
+      }
+      const blob = await exportBundle(characters);
+      download(blob, bundleFilename());
+      this.say(`已导出 ${Object.keys(characters).length} 个角色 + 全部贴图`);
+    } catch (error) {
+      console.error(error);
+      this.say("导出失败，详见 console");
+    }
+  }
+
+  /** Replace the whole session from a bundle. */
+  private async importAll(file: File): Promise<void> {
+    try {
+      const bundle = await importBundle(file);
+
+      let applied = 0;
+      for (const actor of this.actors) {
+        const spec = bundle.characters[actor.id];
+        if (!spec) continue;
+        this.specs.set(actor.id, copySpec(spec));
+        applied += 1;
+      }
+
+      this.pieceIndex = 0;
+      this.buildControls();
+      // Every actor, not just the selected one: a bundle is a whole session.
+      for (const actor of this.actors) {
+        const spec = this.specs.get(actor.id);
+        if (spec) actor.applySpec(spec);
+      }
+      this.rebuild();
+      this.paint?.refresh();
+      this.say(`已载入 ${applied} 个角色、${bundle.textureCount} 张贴图`);
+    } catch (error) {
+      console.error(error);
+      this.say(error instanceof Error ? `导入失败：${error.message}` : "导入失败");
     }
   }
 
@@ -718,14 +738,6 @@ function format(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(3);
 }
 
-function round(value: number): number {
-  return Math.round(value * 1000) / 1000;
-}
-
 function toHex(value: number): string {
   return `#${value.toString(16).padStart(6, "0")}`;
-}
-
-function toHexLiteral(value: number): string {
-  return `0x${value.toString(16).padStart(6, "0")}`;
 }

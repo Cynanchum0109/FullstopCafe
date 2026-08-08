@@ -109,6 +109,45 @@ function registerCanvas(id: string, canvas: HTMLCanvasElement): void {
   painted.set(id, { canvas, texture });
 }
 
+/** Every painted texture, for bundling into an export. */
+export function paintedEntries(): Array<{ id: string; canvas: HTMLCanvasElement }> {
+  return [...painted].map(([id, entry]) => ({ id, canvas: entry.canvas }));
+}
+
+/**
+ * Register a painted texture from raw PNG bytes, replacing any existing one
+ * with the same id. Used when loading an exported bundle.
+ */
+export async function registerPng(id: string, bytes: Uint8Array): Promise<void> {
+  const blob = new Blob([bytes as BlobPart], { type: "image/png" });
+  const url = URL.createObjectURL(blob);
+  try {
+    const image = await loadImage(url);
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    canvas.getContext("2d")?.drawImage(image, 0, 0);
+    registerCanvas(id, canvas);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(`could not decode ${src}`));
+    image.src = src;
+  });
+}
+
+/** Drop every painted texture. Used before loading a bundle. */
+export function clearPainted(): void {
+  for (const entry of painted.values()) entry.texture.dispose();
+  painted.clear();
+}
+
 /** Persist every painted texture to localStorage. */
 export function savePainted(): number {
   const payload: Record<string, string> = {};

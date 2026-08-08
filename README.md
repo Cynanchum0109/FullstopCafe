@@ -70,6 +70,35 @@ Painted textures persist to localStorage (**保存**) and can be downloaded as
 PNGs (**导出 PNG**). Any PNG dropped into `src/assets/hair/` also shows up in
 the texture dropdown, no code change needed.
 
+## Saving a session
+
+**导出存档** downloads a zip of the entire editing session — all three
+characters plus every painted texture. **导入存档** loads one back, restoring
+both. localStorage keeps work safe across a reload, but it is per-browser and
+does not survive a deploy; a file does.
+
+```
+spec.json           every character's full RigSpec, machine-readable
+profiles.ts.txt     the same specs formatted for pasting into profiles/index.ts
+textures/*.png      one per painted texture; filename is the id with ':' → '__'
+README.txt          what the bundle is
+```
+
+Whole session rather than one character on purpose: pieces reference textures
+by id, so a spec on its own is only half the work.
+
+To make an edit permanent, paste the blocks from `profiles.ts.txt` over the
+matching `spec` in `src/actors/profiles/index.ts`.
+
+## Deploying
+
+Pushing to `main` builds and publishes to GitHub Pages via
+`.github/workflows/deploy.yml`. Pages serves from `/FullstopCafe/`, so the Vite
+`base` switches to the repository name under Actions and stays `/` locally.
+
+Painted textures live in localStorage and do **not** ship with a deploy — the
+live site always starts from what is committed in `profiles/index.ts`.
+
 ## Rig tuner
 
 Press `` ` ``. Every number in `RigSpec` is a slider — proportions, polygon

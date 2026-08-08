@@ -5,7 +5,11 @@ import { GameClock } from "./core/Clock";
 import { events } from "./core/Events";
 import { Renderer } from "./render/Renderer";
 import { IsoCamera } from "./render/Camera";
-import { Lighting } from "./render/Lighting";
+import {
+  FROZEN_DAY_FRACTION,
+  Lighting,
+  TIME_OF_DAY_LIGHTING,
+} from "./render/Lighting";
 import { Office, ROOM_MAX_X, ROOM_MAX_Z, ROOM_MIN_X, ROOM_MIN_Z } from "./world/Office";
 import { Furniture } from "./world/furniture";
 import { Actor } from "./actors/Actor";
@@ -155,10 +159,14 @@ function frame(nowMs: number): void {
   for (const actor of actors) actor.update(clock.deltaScaled, clock.elapsed);
   camera.update(clock.delta);
 
-  lighting.apply(clock.dayFraction);
+  // The clock keeps running for the HUD either way; only the light is pinned.
+  const lightFraction = TIME_OF_DAY_LIGHTING
+    ? clock.dayFraction
+    : FROZEN_DAY_FRACTION;
+  lighting.apply(lightFraction);
   // Night factor peaks at midnight, zero through the middle of the day.
   const night = THREE.MathUtils.clamp(
-    Math.cos(clock.dayFraction * Math.PI * 2) * 0.5 + 0.5,
+    Math.cos(lightFraction * Math.PI * 2) * 0.5 + 0.5,
     0,
     1,
   );

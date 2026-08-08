@@ -47,6 +47,8 @@ export class RigTuner {
   /** Untouched copy of each actor's authored look, for the reset button. */
   private readonly baselines = new Map<string, RigSpec>();
   private current: Actor;
+  /** Whoever is currently wearing the selection cage, so it can be taken off. */
+  private caged: Actor | null = null;
   private open = false;
   /** Rebuilt on every actor switch, so sliders show the right values. */
   private inputs: Array<() => void> = [];
@@ -164,6 +166,25 @@ export class RigTuner {
     }
     // Adds or removes the selection cage.
     this.rebuild();
+  }
+
+  /**
+   * Re-read every actor's rig after something outside the tuner rebuilt them.
+   *
+   * The tuner edits its own copies of the specs, so without this a swap made
+   * elsewhere -- the HUD's animal form, say -- would be undone the moment any
+   * slider moved. Baselines move too: 重置 should go back to the look you are
+   * actually wearing, not to the one you left behind.
+   */
+  adoptCurrentRigs(): void {
+    for (const actor of this.actors) {
+      this.specs.set(actor.id, copySpec(actor.rig.spec));
+      this.baselines.set(actor.id, copySpec(actor.rig.spec));
+    }
+    this.pieceIndex = 0;
+    this.buildControls();
+    this.rebuild();
+    this.paint?.refresh();
   }
 
   /** Point the tuner at an actor. Safe to call whether or not the panel is open. */
@@ -702,11 +723,21 @@ export class RigTuner {
   }
 
   private rebuild(): void {
+    // Clear the cage off whoever wore it last. `applySpec` only rebuilds one
+    // actor, so switching tabs -- or closing the panel while a different
+    // character was selected -- used to leave a wireframe hanging on someone
+    // across the room with no way to get rid of it.
+    if (this.caged && this.caged !== this.current) {
+      const spec = this.specs.get(this.caged.id);
+      if (spec) this.caged.applySpec(spec, { highlight: -1 });
+    }
+
     // Only cage the selected piece while the panel is open; a wireframe box
     // floating on a character's head during normal play would be nonsense.
     this.current.applySpec(this.spec(), {
       highlight: this.open ? this.pieceIndex : -1,
     });
+    this.caged = this.open ? this.current : null;
   }
 
   /**

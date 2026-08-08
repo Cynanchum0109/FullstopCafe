@@ -61,6 +61,25 @@ export const palette = {
   sinclairHairShade: 0xbd9a4e,
   sinclairGear: 0x5f5f4a,
   sinclairGoggle: 0x7fb0c0,
+
+  // --- Animal forms ---
+  // Each keeps its owner's hue so the alternate cast is still recognisable at a
+  // glance: blonde chick, brown dog, violet dragon.
+  chickFeather: 0xf5d873,
+  chickFeatherDark: 0xdcbb54,
+  chickBeak: 0xef9d3c,
+  chickWing: 0xe9c552,
+  chickComb: 0xdf4b3f,
+  // Heath: German shepherd. A warm sandy tan against a near-black that is cool
+  // rather than brown -- a brown-black next to tan just reads as dirty tan.
+  gsdTan: 0xd9a76b,
+  gsdTanLight: 0xe8c396,
+  gsdBlack: 0x1c1b20,
+  gsdEye: 0x9b5fe0,
+  // Honglu: border collie. Black and white, and one mint eye.
+  collieBlack: 0x2f2b33,
+  collieMint: 0x7fd9c0,
+  dogNose: 0x2b2b33,
 } as const;
 
 export type PaletteKey = keyof typeof palette;

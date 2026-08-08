@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { palette } from "./palette";
-import { box, boxAt } from "./materials";
+import { box, boxAt, outlineAll } from "./materials";
 import { ROOM_MAX_X, ROOM_MAX_Z, ROOM_MIN_X, ROOM_MIN_Z } from "./Office";
 
 /**
@@ -58,6 +58,11 @@ export class Furniture {
 
     // --- Desk lamp pool of luxury on the boss desk (mesh only). -----------
     // (built inside boss desk)
+
+    // Rim everything in one pass rather than threading a flag through two
+    // hundred `boxAt` calls. The rug opts out below: it lies flat on the floor,
+    // and a dark line around it reads as a hole rather than as a mat.
+    outlineAll(this.group);
   }
 
   // -----------------------------------------------------------------------
@@ -73,6 +78,9 @@ export class Furniture {
     root.name = "rug";
     root.add(boxAt(3.2, 0.04, 2.3, palette.rug, x, 0.02, z, { castShadow: false }));
     root.add(boxAt(2.8, 0.05, 1.9, palette.rugTrim, x, 0.03, z, { castShadow: false }));
+    root.traverse((child) => {
+      child.userData["noOutline"] = true;
+    });
     this.group.add(root);
   }
 

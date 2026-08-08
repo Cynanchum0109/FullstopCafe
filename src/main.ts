@@ -14,6 +14,7 @@ import { Office, ROOM_MAX_X, ROOM_MAX_Z, ROOM_MIN_X, ROOM_MIN_Z } from "./world/
 import { Furniture } from "./world/furniture";
 import { Actor } from "./actors/Actor";
 import { profiles } from "./actors/profiles";
+import { animalProfiles } from "./actors/profiles/animals";
 import { loadPainted } from "./actors/textures";
 import { HUD } from "./ui/HUD";
 import { RigTuner } from "./ui/RigTuner";
@@ -60,6 +61,22 @@ const tuner = new RigTuner(overlay, actors, camera);
 const furnitureButton = hud.addButton("隐藏家具", () => {
   furniture.setVisible(!furniture.visible);
   furnitureButton.textContent = furniture.visible ? "隐藏家具" : "显示家具";
+});
+
+// Alternate animal cast. Same actors -- only the rig is rebuilt, so positions,
+// headings, selection and whatever they were doing all survive the swap.
+let animalForm = false;
+const formButton = hud.addButton("动物形态", () => {
+  animalForm = !animalForm;
+  const source = animalForm ? animalProfiles : profiles;
+  for (const actor of actors) {
+    const profile = source.find((candidate) => candidate.id === actor.id);
+    if (profile) actor.applySpec(profile.spec);
+  }
+  formButton.textContent = animalForm ? "人类形态" : "动物形态";
+  // The tuner keeps its own copies of the specs; without this the next slider
+  // move would put the old form straight back.
+  tuner.adoptCurrentRigs();
 });
 
 // Head-on and level, for judging proportions without the isometric skew.

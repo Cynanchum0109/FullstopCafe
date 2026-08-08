@@ -19,6 +19,10 @@ export type NumericRigKey =
   | "tailThickness"
   | "tailAnchorY"
   | "tailTilt"
+  | "tailCurl"
+  | "earLength"
+  | "earWidth"
+  | "earTilt"
   | "handRadius";
 
 /** Keys of `RigSpec` the tuner exposes as colour swatches. */
@@ -77,20 +81,28 @@ export const RIG_CONTROL_GROUPS: ControlGroup[] = [
     ],
   },
   {
-    title: "发团",
+    // Hair on a human, ears on an animal: both are the mass sitting on top of
+    // the skull, so they share a section rather than earning a second panel
+    // that would be blank half the time.
+    title: "发团 / 耳朵",
     controls: [
       { key: "capDepth", label: "顶冠深度", min: 0.5, max: 1.6, step: 0.02 },
       { key: "backDepth", label: "后发长度", min: 0.8, max: 2.4, step: 0.02 },
       { key: "faceGap", label: "露脸角度", min: 0.8, max: 2.6, step: 0.02 },
+      { key: "earLength", label: "耳长", min: 0.05, max: 0.45, step: 0.005 },
+      { key: "earWidth", label: "耳宽", min: 0.04, max: 0.3, step: 0.005 },
+      { key: "earTilt", label: "耳外张", min: -0.3, max: 0.9, step: 0.02 },
     ],
   },
   {
-    title: "马尾",
+    title: "马尾 / 尾巴",
     controls: [
       { key: "tailLength", label: "长度", min: 0, max: 0.9, step: 0.01 },
       { key: "tailThickness", label: "粗细", min: 0.02, max: 0.16, step: 0.005 },
       { key: "tailAnchorY", label: "扎的高度", min: -0.2, max: 1.0, step: 0.02 },
       { key: "tailTilt", label: "翘起角度", min: -0.4, max: 1.6, step: 0.02 },
+      // Animal only: a human ponytail has no second bend to give.
+      { key: "tailCurl", label: "尾巴卷曲", min: -5, max: 1, step: 0.05 },
     ],
   },
   {

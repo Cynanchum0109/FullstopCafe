@@ -26,6 +26,16 @@ export const idle: AnimFn = (rig, ctx) => {
   rig.joints.head.rotation.z = -sway * 0.05;
   rig.joints.head.rotation.x = breath * 0.03;
 
+  // A standing quadruped shifts its weight through its legs, not by leaning the
+  // whole body: the sway above would otherwise slide it off its own feet.
+  if (rig.legs.length > 0) {
+    rig.joints.body.rotation.z = sway * 0.012;
+    rig.legs.forEach((leg, index) => {
+      const diagonal = index === 0 || index === 3 ? 1 : -1;
+      leg.rotation.x += sway * 0.03 * diagonal;
+    });
+  }
+
   swingHair(rig, -sway * 0.09, 0.04 + breath * 0.03);
 };
 

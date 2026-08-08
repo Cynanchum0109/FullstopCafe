@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>风格试验：圆可爱 + 温馨室内</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: system-ui, "Microsoft YaHei", sans-serif;
+      }
+      body {
+        margin: 0;
+        background: #14141c;
+        color: #e8e8f0;
+        overflow: hidden;
+      }
+      #stage {
+        width: 100vw;
+        height: 100vh;
+        touch-action: none;
+      }
+      #stage canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #controls {
+        position: fixed;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+      }
+      #toggles {
+        display: flex;
+        gap: 6px;
+      }
+      #toggles button {
+        padding: 6px 12px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.5);
+        color: #fff;
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      #toggles button.off {
+        opacity: 0.4;
+      }
+      .slider {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 12px;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.5);
+        color: #fff;
+        font-size: 12px;
+      }
+      .slider input {
+        width: 130px;
+      }
+      #hint {
+        position: fixed;
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 6px 14px;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.5);
+        color: #fff;
+        font-size: 12px;
+        opacity: 0.8;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <div id="controls">
+      <div id="toggles"></div>
+      <div class="slider">
+        <span>描边粗细</span>
+        <input id="thickness" type="range" min="2" max="30" step="1" value="8" />
+        <span id="thicknessValue">0.008</span>
+      </div>
+    </div>
+    <div id="hint">拖拽旋转 · 滚轮缩放</div>
+    <script type="module" src="./style-compare.js"></script>
+  </body>
+</html>

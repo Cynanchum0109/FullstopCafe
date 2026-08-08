@@ -8,8 +8,10 @@ import {
   cardMaterial,
   cardDepthMaterial,
   invisibleMaterial,
+  outlineAll,
 } from "../world/materials";
 import { getTexture } from "./textures";
+import { ANIMAL_HEIGHT, buildAnimal, type AnimalKind } from "./animal";
 import {
   buildPiece,
   fringe,
@@ -58,18 +60,44 @@ export interface RigSpec {
    */
   pieces: SurfacePiece[];
 
-  // --- Ponytail ---
+  // --- Ponytail, and an animal's tail ---
+  // The same four numbers drive both. On a human they hang a ponytail off the
+  // skull; on an animal they draw the curl of a tail off the rump. Sharing them
+  // means the tuner's existing sliders work on either without a second panel.
   tailLength: number;
   tailThickness: number;
   /** How high up the back of the skull the tail is tied, as a fraction of r. */
   tailAnchorY: number;
-  /** How far the tail kicks backwards from straight down, radians. */
+  /**
+   * Human: how far the ponytail kicks back from straight down, radians.
+   * Animal: the tail's starting heading -- 0 points straight up, positive
+   * leans back.
+   */
   tailTilt: number;
+  /**
+   * Animal only: total turn from tail root to tip, radians. Negative curls the
+   * tip forward over the rump. Ignored by the human build.
+   */
+  tailCurl: number;
+
+  // --- Animal ears ---
+  // Ignored by the human build, which grows hair out of `capDepth` instead.
+  earLength: number;
+  earWidth: number;
+  /** How far the ears splay outward from vertical, radians. */
+  earTilt: number;
 
   // --- Limbs ---
   handRadius: number;
 
   goggles: boolean;
+
+  /**
+   * Creature form. `none` builds the human head; anything else swaps the hair
+   * mass for beaks, ears, horns and a tail. Not optional, so a partial spec can
+   * still be spread over the defaults without smuggling in an `undefined`.
+   */
+  animal: AnimalKind;
 
   // --- Colours ---
   skin: number;
@@ -99,8 +127,12 @@ export const DEFAULT_RIG_SPEC: RigSpec = {
   hemRadius: 0.255,
 
   bodySegments: 6,
-  headSegments: 8,
-  headRings: 5,
+  // The head used to be built at 8x5, which under flat shading was a faceted
+  // lump -- fine when every facet got its own brightness. Once the toon ramp
+  // collapses lighting into bands, a low-poly ball just reads as a dented one.
+  // Higher tessellation costs nothing here and is what makes it read as round.
+  headSegments: 16,
+  headRings: 12,
 
   capDepth: 1.0,
   backDepth: 1.75,
@@ -111,10 +143,16 @@ export const DEFAULT_RIG_SPEC: RigSpec = {
   tailThickness: 0.075,
   tailAnchorY: 0.55,
   tailTilt: 0.5,
+  tailCurl: -2.3,
+
+  earLength: 0.3,
+  earWidth: 0.15,
+  earTilt: 0.16,
 
   handRadius: 0.062,
 
   goggles: false,
+  animal: "none",
 
   skin: palette.skin,
   skinDark: palette.skinDark,
@@ -212,6 +250,14 @@ export class Rig {
   readonly root = new THREE.Group();
   readonly joints: RigJoints;
   readonly spec: RigSpec;
+  /**
+   * Hip pivots of a quadruped, front pair then back, left before right. Empty
+   * for humans and for the chick, and that emptiness is the signal the walk
+   * cycle reads to decide whether to swing legs or hop.
+   */
+  legs: THREE.Group[] = [];
+  /** Shoulder pivots for a chick's wings. Empty for everyone else. */
+  wings: THREE.Group[] = [];
 
   private readonly rest: RestTransform[] = [];
   /** Index of the piece the tuner has selected, or -1. */
@@ -221,12 +267,17 @@ export class Rig {
     this.spec = { ...DEFAULT_RIG_SPEC, ...spec };
     this.highlight = options.highlight ?? -1;
     this.joints = this.build();
+    // Rim the whole character in one pass. Face pieces, eyes and markings opt
+    // out via `userData.noOutline` -- a rim around a 7mm eye slab is a blot.
+    outlineAll(this.root);
     this.captureRest();
   }
 
   /** Total height, useful for placing bubbles and name tags above the head. */
   get height(): number {
     const s = this.spec;
+    // An animal's proportions come from `animal.ts`, not from these numbers.
+    if (s.animal !== "none") return ANIMAL_HEIGHT * s.scale;
     return (s.bodyHeight + s.headRadius * 2) * s.scale;
   }
 
@@ -277,6 +328,15 @@ export class Rig {
     const bob = new THREE.Group();
     bob.name = "bob";
     this.root.add(bob);
+
+    // An animal is a different creature, not a dressed-up human: its own body,
+    // legs and head, sharing only the joint names so the animations still fit.
+    if (s.animal !== "none") {
+      const animal = buildAnimal(bob, s);
+      this.legs = animal.legs;
+      this.wings = animal.wings;
+      return { bob, ...animal.joints };
+    }
 
     // --- Body ------------------------------------------------------------
     const bodyGroup = new THREE.Group();
@@ -357,6 +417,12 @@ export class Rig {
           face.add(overlay);
         }
       }
+
+      // Surface pieces are markings, not volumes: a rim around an eye slab or
+      // a strand of fringe reads as a smudge rather than as an outline.
+      node.traverse((child) => {
+        child.userData["noOutline"] = true;
+      });
 
       if (index === this.highlight) markHighlighted(node);
       pieceRoot.add(node);
@@ -503,7 +569,9 @@ export class Rig {
   }
 
   private captureRest(): void {
-    for (const joint of Object.values(this.joints)) {
+    // Legs are captured alongside the named joints so `resetPose` puts a
+    // quadruped's stance back every frame, the same as everything else.
+    for (const joint of [...Object.values(this.joints), ...this.legs, ...this.wings]) {
       this.rest.push({
         joint,
         position: joint.position.clone(),

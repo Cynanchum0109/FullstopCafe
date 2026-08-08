@@ -1,32 +1,141 @@
 import * as THREE from "three";
+import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
 /**
- * Flat-shaded Lambert is the whole look. Materials are cached by colour so a
- * room full of props shares a handful of GPU programs.
+ * A toon ramp: a few grey steps sampled with NEAREST, so lighting lands in hard
+ * bands instead of a smooth falloff.
+ *
+ * This replaced flat shading, which gave every facet its own brightness and
+ * turned a faceted ball into visual noise. A ramp collapses that same ball into
+ * two or three clean shapes, which is what lets a round silhouette read as
+ * round -- and it is why the meshes here now carry more segments than they used
+ * to. The ramp and the higher tessellation only work as a pair.
+ *
+ * The dark step is warm rather than neutral: a grey shadow in a warm room is the
+ * fastest way to make it feel cold.
  */
-const cache = new Map<number, THREE.MeshLambertMaterial>();
+function gradientMap(steps: number[]): THREE.DataTexture {
+  const texture = new THREE.DataTexture(
+    new Uint8Array(steps),
+    steps.length,
+    1,
+    THREE.RedFormat,
+  );
+  texture.minFilter = THREE.NearestFilter;
+  texture.magFilter = THREE.NearestFilter;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
+}
 
-export function flatMaterial(color: number): THREE.MeshLambertMaterial {
+/** Shadow, mid, light. Four steps drift back toward smooth; two read as paper. */
+export const TOON_RAMP = gradientMap([78, 172, 255]);
+
+/**
+ * The one material every solid surface uses. Cached by colour so a room full of
+ * props shares a handful of GPU programs.
+ */
+const cache = new Map<number, THREE.MeshToonMaterial>();
+
+export function flatMaterial(color: number): THREE.MeshToonMaterial {
   const existing = cache.get(color);
   if (existing) return existing;
-  const material = new THREE.MeshLambertMaterial({ color, flatShading: true });
+  const material = new THREE.MeshToonMaterial({ color, gradientMap: TOON_RAMP });
   cache.set(color, material);
   return material;
 }
 
 /** Same as `flatMaterial` but double sided, for single-plane props like hair. */
-const doubleCache = new Map<number, THREE.MeshLambertMaterial>();
+const doubleCache = new Map<number, THREE.MeshToonMaterial>();
 
-export function flatMaterialDouble(color: number): THREE.MeshLambertMaterial {
+export function flatMaterialDouble(color: number): THREE.MeshToonMaterial {
   const existing = doubleCache.get(color);
   if (existing) return existing;
-  const material = new THREE.MeshLambertMaterial({
+  const material = new THREE.MeshToonMaterial({
     color,
-    flatShading: true,
+    gradientMap: TOON_RAMP,
     side: THREE.DoubleSide,
   });
   doubleCache.set(color, material);
   return material;
+}
+
+/** Default rim thickness, in world units. Tuned against a 0.23m head. */
+export const OUTLINE_THICKNESS = 0.008;
+
+const outlineCache = new Map<number, THREE.ShaderMaterial>();
+
+/**
+ * Inverted-hull outline material: grows a copy of the mesh along its normals
+ * and draws back faces only, so the copy peeks out as a dark rim.
+ *
+ * Warm near-black rather than true black -- a neutral rim on warm wood looks
+ * like ink on the wrong paper.
+ */
+function outlineMaterial(thickness: number): THREE.ShaderMaterial {
+  const existing = outlineCache.get(thickness);
+  if (existing) return existing;
+  const material = new THREE.ShaderMaterial({
+    uniforms: {
+      thickness: { value: thickness },
+      tint: { value: new THREE.Color(0x30241c) },
+    },
+    vertexShader: `
+      uniform float thickness;
+      void main() {
+        vec3 grown = position + normal * thickness;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(grown, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 tint;
+      void main() { gl_FragColor = vec4(tint, 1.0); }
+    `,
+    side: THREE.BackSide,
+  });
+  outlineCache.set(thickness, material);
+  return material;
+}
+
+/** Marks a mesh that already carries a hull, and hulls themselves. */
+const OUTLINED = "outlined";
+
+/**
+ * Give one mesh a rim.
+ *
+ * The hull's geometry is welded and re-normalled first. Without that, a box's
+ * corner normals point three different ways and the hull splits open at every
+ * corner -- the classic broken-outline look.
+ */
+export function outline(mesh: THREE.Mesh, thickness = OUTLINE_THICKNESS): void {
+  if (mesh.userData[OUTLINED]) return;
+  const welded = mergeVertices(mesh.geometry.clone(), 1e-4);
+  welded.computeVertexNormals();
+  const hull = new THREE.Mesh(welded, outlineMaterial(thickness));
+  hull.castShadow = false;
+  hull.receiveShadow = false;
+  hull.userData[OUTLINED] = true;
+  mesh.userData[OUTLINED] = true;
+  mesh.add(hull);
+}
+
+/**
+ * Rim every mesh under `root`.
+ *
+ * Called once after a group is built rather than per-mesh at each call site:
+ * the furniture alone is a couple of hundred boxes, and threading an `outline`
+ * flag through every one of them would be noise. Meshes that should stay bare
+ * -- the floor, the walls, anything flat against another surface -- opt out by
+ * setting `userData.noOutline` when they are built.
+ */
+export function outlineAll(root: THREE.Object3D, thickness = OUTLINE_THICKNESS): void {
+  const meshes: THREE.Mesh[] = [];
+  root.traverse((child) => {
+    if (child instanceof THREE.Mesh && !child.userData[OUTLINED] && !child.userData["noOutline"]) {
+      meshes.push(child);
+    }
+  });
+  for (const mesh of meshes) outline(mesh, thickness);
 }
 
 /**
@@ -63,19 +172,19 @@ export function box(
  * also means unpainted areas cut holes in the piece, so a partly painted
  * canvas trims the shape as well as colouring it.
  */
-const cardCache = new Map<string, THREE.MeshLambertMaterial>();
+const cardCache = new Map<string, THREE.MeshToonMaterial>();
 
-export function cardMaterial(texture: THREE.Texture): THREE.MeshLambertMaterial {
+export function cardMaterial(texture: THREE.Texture): THREE.MeshToonMaterial {
   const existing = cardCache.get(texture.uuid);
   if (existing) return existing;
 
-  const material = new THREE.MeshLambertMaterial({
+  const material = new THREE.MeshToonMaterial({
     map: texture,
     color: 0xffffff,
+    gradientMap: TOON_RAMP,
     alphaTest: 0.5,
     transparent: false,
     side: THREE.DoubleSide,
-    flatShading: true,
     // The textured mesh sits exactly on top of the base-coloured one. Without a
     // depth nudge the two z-fight and the surface speckles.
     polygonOffset: true,

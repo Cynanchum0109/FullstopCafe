@@ -222,6 +222,8 @@ interface FaceSpec {
    * close to it in value; on a pale face it just makes the eye look drawn on.
    */
   rim?: boolean;
+  /** White catch light. Off for simple dot eyes (a glint doubles them). */
+  glint?: boolean;
   width: number;
   height: number;
   lift: number;
@@ -276,14 +278,17 @@ function faceTexture(spec: FaceSpec): THREE.CanvasTexture {
     const u = 0.5 + side * spec.eye.x;
     if (spec.rim) ellipse(u, spec.eye.y, spec.eye.rx * 1.28, spec.eye.ry * 1.22, "#181419");
     ellipse(u, spec.eye.y, spec.eye.rx, spec.eye.ry, hex(color));
-    // Glint, up and inboard. Painted, so it can never leave the eye.
-    ellipse(
-      u - side * spec.eye.rx * 0.3,
-      spec.eye.y - spec.eye.ry * 0.34,
-      spec.eye.rx * 0.3,
-      spec.eye.ry * 0.28,
-      "#ffffff",
-    );
+    // Glint, up and inboard. Painted, so it can never leave the eye. Skip on
+    // plain dot eyes -- at this scale a white speck just reads as a second eye.
+    if (spec.glint !== false) {
+      ellipse(
+        u - side * spec.eye.rx * 0.3,
+        spec.eye.y - spec.eye.ry * 0.34,
+        spec.eye.rx * 0.3,
+        spec.eye.ry * 0.28,
+        "#ffffff",
+      );
+    }
   }
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -425,20 +430,24 @@ function addEar(hair: THREE.Group, breed: Breed, s: RigSpec, side: number): void
   root.add(earPlate(tip, s.earWidth, standing, breed.earThickness, breed.earFur, notch));
 
   if (!semi) {
-    // Pale inner ear, set into the front of the plate. The collie skips it --
-    // its fold covers its own inside, so a pale surface there would just be a
-    // wrong-coloured stripe along the crease.
-    const inner = earPlate(
-      s.earWidth * 0.12,
-      s.earWidth * 0.6,
-      standing * 0.72,
-      breed.earThickness * 0.4,
-      breed.under,
-      notch,
-    );
-    inner.position.z = -breed.earThickness * 0.45;
-    inner.userData["noOutline"] = true;
-    root.add(inner);
+    // Pale inner ear, as a thin plate on *both* faces. The outer plate's broad
+    // faces are ±Z (character front/back); the room camera sits at +X/+Z, so a
+    // pad only on the front sits on the far side of a black wall and never
+    // shows. Both sides keep it readable in isometric and front view.
+    for (const face of [-1, 1] as const) {
+      const inner = earPlate(
+        s.earWidth * 0.18,
+        s.earWidth * 0.72,
+        standing * 0.78,
+        breed.earThickness * 0.28,
+        breed.under,
+        notch,
+      );
+      // Past the outer face so the tan reads as an inset, not buried in black.
+      inner.position.z = face * breed.earThickness * 0.52;
+      inner.userData["noOutline"] = true;
+      root.add(inner);
+    }
     return;
   }
 
@@ -733,10 +742,9 @@ function buildChick(
   addFace(head, s.headRadius, {
     eyeLeft: palette.suitBlack,
     eyeRight: palette.suitBlack,
-    // Bean eyes: tall ovals, flat black, no rim. Oversized on purpose -- the
-    // chick is scale 0.6 and the face is only a painted cap, so dog-sized
-    // numbers collapse to a couple of pixels in the isometric view.
-    eye: { x: 0.2, y: 0.4, rx: 0.135, ry: 0.19 },
+    // Plain round dots -- no glint, equal radii. A chick is beak + two spots.
+    eye: { x: 0.2, y: 0.4, rx: 0.12, ry: 0.12 },
+    glint: false,
     blush: { x: 0.38, y: 0.63, rx: 0.09, ry: 0.055, color: palette.chickBeak },
     width: 1.6,
     height: 1.2,

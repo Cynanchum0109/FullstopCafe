@@ -7,6 +7,7 @@ import { Renderer } from "./render/Renderer";
 import { IsoCamera } from "./render/Camera";
 import { Lighting } from "./render/Lighting";
 import { Office, ROOM_MAX_X, ROOM_MAX_Z, ROOM_MIN_X, ROOM_MIN_Z } from "./world/Office";
+import { Furniture } from "./world/furniture";
 import { Actor } from "./actors/Actor";
 import { profiles } from "./actors/profiles";
 import { loadPainted } from "./actors/textures";
@@ -28,15 +29,23 @@ const lighting = new Lighting(scene);
 const office = new Office();
 scene.add(office.group);
 
-const actors = profiles.map(
-  (profile) =>
-    new Actor({
-      id: profile.id,
-      displayName: profile.displayName,
-      spec: profile.spec,
-      position: new THREE.Vector3(profile.spawn.x, 0, profile.spawn.z),
-    }),
-);
+const furniture = new Furniture();
+scene.add(furniture.group);
+
+const actors = profiles.map((profile) => {
+  // Prefer documented home anchors (boss desk / sofa / ops table) over raw numbers.
+  const home = furniture.preferredSpotFor(profile.id);
+  const x = home?.position.x ?? profile.spawn.x;
+  const z = home?.position.z ?? profile.spawn.z;
+  const actor = new Actor({
+    id: profile.id,
+    displayName: profile.displayName,
+    spec: profile.spec,
+    position: new THREE.Vector3(x, 0, z),
+  });
+  if (home) actor.setYaw(home.yaw);
+  return actor;
+});
 for (const actor of actors) scene.add(actor.object);
 
 const hud = new HUD(overlay, clock);

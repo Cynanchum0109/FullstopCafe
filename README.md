@@ -150,10 +150,12 @@ in a `.glb` mug or rifle later needs no rig changes.
 src/
   core/     Clock (in-game time, pause, fast-forward), Events (typed bus)
   render/   Renderer (pluggable post-process chain), IsoCamera, Lighting
-  world/    Office shell, palette, material + primitive helpers
+  world/    Office shell, furniture + interaction spots, palette, materials
   actors/   Rig (procedural body), Actor (movement + anim player),
             animations/ (one module per action), profiles/ (per-character data)
   ui/       HUD
+docs/
+  DESIGN.md Character lore, weapons, room plan, AI weight notes
 ```
 
 ## Status
@@ -161,5 +163,9 @@ src/
 **Phase 1 done** — room, camera, lighting, day/night, rig, walk and idle,
 manual test driver.
 
-Next: waypoint navigation, needs-driven utility AI, furniture with interaction
-spots, then per-character personality weights and dialogue.
+**Furniture (partial)** — office set + interaction spots in `src/world/furniture.ts`.
+Character lore, weapons, home anchors: [`docs/DESIGN.md`](docs/DESIGN.md).
+Protagonist appearance specs are frozen.
+
+Next: waypoint navigation, needs-driven utility AI (weights from the design
+doc), sit/lie/work animations, weapon props from `ref/`, then dialogue.

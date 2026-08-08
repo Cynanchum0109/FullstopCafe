@@ -155,11 +155,14 @@ function outline(piece: SurfacePiece): THREE.Shape {
 
     case "disc": {
       // Ellipse for eyes, blush, and anything else that reads as a dot.
+      // Centred on -length/2 like every other preset: the shapes all have to
+      // occupy the same box, or the paint board's guide, the UV mapping and a
+      // traced outline stop agreeing about where the piece is.
       const sides = 8;
       for (let i = 0; i <= sides; i++) {
         const angle = (i / sides) * Math.PI * 2;
         const x = Math.cos(angle) * halfWidth;
-        const y = Math.sin(angle) * (length / 2);
+        const y = -length / 2 + Math.sin(angle) * (length / 2);
         if (i === 0) shape.moveTo(x, y);
         else shape.lineTo(x, y);
       }
@@ -247,48 +250,19 @@ export function cardBounds(piece: SurfacePiece): {
 } {
   const pad = Math.max(piece.pad, 1);
 
-  // `custom` gets the plain formula. Its path is stored normalised against
-  // these bounds, so deriving the bounds from the path would feed back on
-  // itself and the shape would creep every time it was rebuilt.
-  if (piece.shape === "custom") {
-    // Deliberately the same square the preset shapes produce: the path was
-    // normalised against those bounds while tracing, and any difference here
-    // would shift and rescale the drawing the moment the shape switched over.
-    const half = (Math.max(piece.width, piece.length) / 2) * pad;
-    const centreY = -piece.length / 2;
-    return {
-      minX: -half,
-      maxX: half,
-      minY: centreY - half,
-      maxY: centreY + half,
-    };
-  }
-
-  // Everything else centres the card on the outline's real bounding box, so a
-  // skewed or asymmetric shape still sits in the middle of the paint board.
-  const points = outline(piece).getPoints(16);
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (const point of points) {
-    minX = Math.min(minX, point.x);
-    maxX = Math.max(maxX, point.x);
-    minY = Math.min(minY, point.y);
-    maxY = Math.max(maxY, point.y);
-  }
-  if (!Number.isFinite(minX)) {
-    return { minX: -0.1, maxX: 0.1, minY: -0.1, maxY: 0.1 };
-  }
-
-  const centreX = (minX + maxX) / 2;
-  const centreY = (minY + maxY) / 2;
-  // Square the card off: the paint board is square, and a square card means the
-  // guide is never stretched along one axis.
-  const half = (Math.max(maxX - minX, maxY - minY) / 2) * pad;
+  // One formula for every shape, derived from width and length rather than from
+  // the outline itself. Deriving it per shape meant a traced path -- which is
+  // stored normalised against these bounds -- shifted and rescaled the moment
+  // the shape switched to `custom`, and it would feed back on itself once it
+  // had.
+  //
+  // Square, because the paint board is square: equal world units per pixel on
+  // both axes, so nothing drawn there comes out stretched.
+  const half = (Math.max(piece.width, piece.length) / 2) * pad;
+  const centreY = -piece.length / 2;
   return {
-    minX: centreX - half,
-    maxX: centreX + half,
+    minX: -half,
+    maxX: half,
     minY: centreY - half,
     maxY: centreY + half,
   };

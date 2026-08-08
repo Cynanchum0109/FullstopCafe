@@ -69,7 +69,6 @@ export interface RigSpec {
 
   // --- Limbs ---
   handRadius: number;
-  footRadius: number;
 
   goggles: boolean;
 
@@ -115,7 +114,6 @@ export const DEFAULT_RIG_SPEC: RigSpec = {
   tailTilt: 0.5,
 
   handRadius: 0.062,
-  footRadius: 0.05,
 
   goggles: false,
 
@@ -146,7 +144,7 @@ export function defaultPieces(): SurfacePiece[] {
       shape: "disc",
       color: "eye",
       azimuth: 0.34,
-      elevation: -0.02,
+      elevation: 0.165,
       lift: 0.004,
       width: 0.07,
       length: 0.085,
@@ -158,7 +156,7 @@ export function defaultPieces(): SurfacePiece[] {
       shape: "disc",
       color: "skinDark",
       azimuth: 0.72,
-      elevation: -0.28,
+      elevation: -0.17,
       lift: 0.003,
       width: 0.07,
       length: 0.05,
@@ -188,8 +186,6 @@ export interface RigJoints {
   hairTail: THREE.Group;
   handL: THREE.Group;
   handR: THREE.Group;
-  footL: THREE.Group;
-  footR: THREE.Group;
 }
 
 interface RestTransform {
@@ -370,25 +366,19 @@ export class Rig {
 
     if (s.goggles) this.buildGoggles(head, centre, s);
 
-    // --- Floating limbs --------------------------------------------------
-    // All four start hidden. Animations opt in, which is what makes "pop out a
-    // hand to hold a mug" a two-line change rather than a rig change.
+    // --- Floating hands ----------------------------------------------------
+    // Hidden at rest. Animations opt in, which is what makes "pop out a hand to
+    // hold a mug" a two-line change rather than a rig change.
+    //
+    // No feet: orbs peeking out from under the cone read as debris rather than
+    // as feet, and the hop already carries the walk on its own.
     const handY = s.bodyHeight * 0.6;
     const handX = s.bodyBottomRadius * 0.88;
     const handL = this.buildOrb("handL", -handX, handY, -0.04, s.handRadius, s.skin);
     const handR = this.buildOrb("handR", handX, handY, -0.04, s.handRadius, s.skin);
     bodyGroup.add(handL, handR);
 
-    // Feet hang off `root`, not `bob`, so they stay on the floor while the body
-    // hops -- that gap is the only reason you ever see them. They also sit well
-    // forward of the cone's flare, or they would be permanently hidden inside it.
-    const footX = s.bodyBottomRadius * 0.48;
-    const footZ = -(s.bodyBottomRadius + s.footRadius * 0.55);
-    const footL = this.buildOrb("footL", -footX, s.footRadius, footZ, s.footRadius, s.boots);
-    const footR = this.buildOrb("footR", footX, s.footRadius, footZ, s.footRadius, s.boots);
-    this.root.add(footL, footR);
-
-    return { bob, body: bodyGroup, head, hair, hairTail, handL, handR, footL, footR };
+    return { bob, body: bodyGroup, head, hair, hairTail, handL, handR };
   }
 
   /**

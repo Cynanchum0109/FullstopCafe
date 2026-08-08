@@ -19,8 +19,7 @@ export type NumericRigKey =
   | "tailThickness"
   | "tailAnchorY"
   | "tailTilt"
-  | "handRadius"
-  | "footRadius";
+  | "handRadius";
 
 /** Keys of `RigSpec` the tuner exposes as colour swatches. */
 export type ColorRigKey =
@@ -95,10 +94,9 @@ export const RIG_CONTROL_GROUPS: ControlGroup[] = [
     ],
   },
   {
-    title: "手脚",
+    title: "手",
     controls: [
       { key: "handRadius", label: "手大小", min: 0.03, max: 0.11, step: 0.002 },
-      { key: "footRadius", label: "脚大小", min: 0.025, max: 0.1, step: 0.002 },
     ],
   },
 ];

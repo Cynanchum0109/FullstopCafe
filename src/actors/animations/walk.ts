@@ -5,12 +5,9 @@ import { swingHair } from "./idle";
 const CADENCE = 4.2;
 
 /**
- * Walk cycle. With no legs to swing, the entire read comes from four things:
- * a hard vertical hop, squash on landing and stretch at the top, a forward
- * lean, and two orb feet that pop into existence and alternate underneath.
- *
- * The feet only exist while moving, which is why the walk feels bouncy rather
- * than like a cone being dragged across the floor.
+ * Walk cycle. With no legs to swing, the entire read comes from a hard vertical
+ * hop, squash on landing and stretch at the top, a forward lean, and a head
+ * that lags the body.
  */
 export const walk: AnimFn = (rig, ctx) => {
   const speed = Math.max(ctx.speed, 0.001);
@@ -43,34 +40,14 @@ export const walk: AnimFn = (rig, ctx) => {
 
   swingHair(rig, -counterSwing * 0.22 * speed, 0.18 * speed + hop * 0.14);
 
-  // --- Feet --------------------------------------------------------------
-  rig.joints.footL.visible = true;
-  rig.joints.footR.visible = true;
-
-  // One foot forward and planted while the other is back and lifted.
-  const stride = 0.16 * speed;
-  const stepL = swing;
-  const stepR = -swing;
-
-  // Offsets from the rest pose rather than absolute positions, so retuning the
-  // body proportions never leaves the feet floating in the wrong place.
-  rig.joints.footL.position.y += Math.max(0, stepL) * 0.1 * speed;
-  rig.joints.footL.position.z -= stepL * stride;
-  rig.joints.footR.position.y += Math.max(0, stepR) * 0.1 * speed;
-  rig.joints.footR.position.z -= stepR * stride;
-
-  // Squash each foot as it takes the weight.
-  const squashL = 1 - Math.max(0, -stepL) * 0.25 * speed;
-  const squashR = 1 - Math.max(0, -stepR) * 0.25 * speed;
-  rig.joints.footL.scale.set(1 / squashL, squashL, 1 / squashL);
-  rig.joints.footR.scale.set(1 / squashR, squashR, 1 / squashR);
-
   // --- Hands -------------------------------------------------------------
   // Hands pop out and pump only once the character is properly moving; at a
   // shuffle they stay tucked away.
   if (speed > 0.45) {
     rig.joints.handL.visible = true;
     rig.joints.handR.visible = true;
+    // Offsets from the rest pose rather than absolute positions, so retuning
+    // the body proportions never leaves the hands floating in the wrong place.
     const reach = 0.1 * speed;
     rig.joints.handL.position.y += swing * 0.04;
     rig.joints.handL.position.z -= swing * reach;
